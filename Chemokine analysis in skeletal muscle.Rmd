@@ -154,6 +154,13 @@ ggsave("plots/chemokines_skm/Delta_ct_per_gene.png", dpi = 600)
 qpcr <- qpcr[,c("Target Name", "Sample Name", "Delta_ct", "rel_expr", "genotype")]
 ```
 
+### Remove other hkg
+```{r}
+qpcr <- qpcr %>%
+  filter(`Target Name` != "Psma3" & `Target Name` != "Rpl13a")
+```
+
+
 ### Take average and standard deviation per Gene and Genotype
 ```{r}
 df <- qpcr %>%
@@ -161,7 +168,7 @@ df <- qpcr %>%
   group_by(`Target Name`, genotype) %>%
   summarise(replicates = n(), 
             Delta_ct_avg = mean(Delta_ct, na.rm = TRUE), 
-            Delta_ct_sem = sd(Delta_ct, na.rm = TRUE)/sqrt(replicates),
+            Delta_ct_sem = sd(Delta_ct, na.rm = TRUE)/sqrt(replicates)#,
             #Rel_expr_avg = mean(rel_expr, na.rm = TRUE),
             #Rel_expr_sem = sd(rel_expr, na.rm = TRUE)/sqrt(replicates)
             ) %>%
@@ -203,11 +210,35 @@ df <- df %>%
          ymax = Fold_change_avg_NA + Fold_change_sem_NA)
 ```
 
+## Statistics
+perform t-test dystrophic vs healthy and implement in the plot
+```{r}
+genes <- unique(qpcr[["Target Name"]])
+t_data <- list()
+
+for (i in 1:21){
+  temp <- qpcr %>%
+  filter(`Target Name` == genes[i])
+t <- t.test(Delta_ct~genotype, data = temp)
+t_data[[i]] <- c(p_value = t$p.value, `Target Name` = genes[i])
+}
+```
+
+```{r}
+stat <- as.data.frame(t(as.data.frame(t_data)))
+stat
+```
+
+```{r}
+df <- df %>%
+  left_join(stat, by = "Target Name")
+```
+
 ### Prepare plotting
 ```{r}
 p <- df %>%
   ungroup() %>%
-  filter(`Target Name` != "Rpl13a" & `Target Name` != "Psma3") %>%
+  #filter(`Target Name` != "Rpl13a" & `Target Name` != "Psma3") %>%
   filter(Genotype == "Dystrophic") %>%
   arrange(desc(Fold_change_avg_NA)) %>%
   mutate(order = row_number())
@@ -216,7 +247,7 @@ p <- df %>%
 ### Plot
 ```{r fig.height=5, fig.width=2.5}
 p %>%
-  ggplot(aes(x = order, y = rev(log(Fold_change_avg_NA)), fill = Genotype)) +
+  ggplot(aes(x = order, y = rev(log(Fold_change_avg_NA)), fill = as.numeric(p_value))) +
     geom_col(position = position_dodge(), width = 0.8) +
     geom_errorbar(aes(ymin = rev(log(ymin)), ymax = rev(log(ymax))), position = position_dodge(0.9), width = 0.25) +
     geom_hline(yintercept = log(1), color = "red", size = 1) +
