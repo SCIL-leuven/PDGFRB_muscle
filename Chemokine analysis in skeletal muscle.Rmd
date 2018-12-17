@@ -219,13 +219,14 @@ t_data <- list()
 for (i in 1:21){
   temp <- qpcr %>%
   filter(`Target Name` == genes[i])
-t <- t.test(Delta_ct~genotype, data = temp)
+t <- wilcox.test(Delta_ct~genotype, data = temp)
 t_data[[i]] <- c(p_value = t$p.value, `Target Name` = genes[i])
 }
 ```
 
 ```{r}
-stat <- as.data.frame(t(as.data.frame(t_data)))
+stat <- as.data.frame(t(as.data.frame(t_data, stringsAsFactors = FALSE)), stringsAsFactors = FALSE)
+stat$p_value <- as.numeric(stat$p_value)
 stat
 ```
 
@@ -234,11 +235,12 @@ df <- df %>%
   left_join(stat, by = "Target Name")
 ```
 
-### Prepare plotting
+### Create boolean for p-value and prepare plotting
 ```{r}
 p <- df %>%
+  mutate(sign = p_value <= 0.05) %>%
   ungroup() %>%
-  #filter(`Target Name` != "Rpl13a" & `Target Name` != "Psma3") %>%
+  filter(`Target Name` != "Rpl13a" & `Target Name` != "Psma3") %>%
   filter(Genotype == "Dystrophic") %>%
   arrange(desc(Fold_change_avg_NA)) %>%
   mutate(order = row_number())
@@ -247,19 +249,25 @@ p <- df %>%
 ### Plot
 ```{r fig.height=5, fig.width=2.5}
 p %>%
-  ggplot(aes(x = order, y = rev(log(Fold_change_avg_NA)), fill = as.numeric(p_value))) +
+  ggplot(aes(x = order, y = rev(log(Fold_change_avg_NA)), fill = rev(sign))) +
     geom_col(position = position_dodge(), width = 0.8) +
     geom_errorbar(aes(ymin = rev(log(ymin)), ymax = rev(log(ymax))), position = position_dodge(0.9), width = 0.25) +
     geom_hline(yintercept = log(1), color = "red", size = 1) +
+    scale_fill_manual(values = c("grey80", "black"), labels = c("p > 0.05", "p < 0.05")) +
     scale_y_continuous("Log(fold change)\nDystrophic vs Healthy\nskeletal muscle", expand = c(0, 0.1)) +
     scale_x_continuous(breaks = p$order, labels = rev(p$`Target Name`), expand = c(0, 0.2)) +
     coord_flip() +
     theme_bw(base_size = 14) +
     theme_jc_one +
-    theme(axis.title.y = element_blank(), legend.position = "top",  
+    theme(axis.title.y = element_blank(), legend.position = "top", legend.title = element_blank(), 
           axis.text.y = element_text(size = 12, face = "italic"))
 ggsave("plots/chemokines_skm/fold_change_Dys_vs_wt.pdf", dpi = 600)
 ```
 
-# TO DO
-Add t-test and use significant values to colour plot
+### Plot only significant genes
+```{r}
+p %>%
+  filter(sign == TRUE) %>%
+  ggplot()
+```
+
