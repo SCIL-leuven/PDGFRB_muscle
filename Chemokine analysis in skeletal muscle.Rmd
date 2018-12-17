@@ -210,7 +210,7 @@ df <- df %>%
          ymax = Fold_change_avg_NA + Fold_change_sem_NA)
 ```
 
-## Statistics
+### Statistics
 perform t-test dystrophic vs healthy and implement in the plot
 ```{r}
 genes <- unique(qpcr[["Target Name"]])
@@ -264,10 +264,43 @@ p %>%
 ggsave("plots/chemokines_skm/fold_change_Dys_vs_wt.pdf", dpi = 600)
 ```
 
-### Plot only significant genes
+## Plot only significant genes
+### Equal breaks function
 ```{r}
-p %>%
+equal_breaks <- function(n = 3, s = 0.05, ...){
+  function(x){
+    # rescaling
+    d <- s * diff(range(x)) / (1+2*s)
+    round(seq(min(x)+d, max(x)-d, length=n), 1)
+  }
+}
+```
+
+
+### Select siginificant genes and order df according to highest fold change
+```{r fig.height=4, fig.width=6}
+temp <- p %>%
   filter(sign == TRUE) %>%
-  ggplot()
+  select(`Target Name`, sign, Fold_change_avg_NA) %>%
+  inner_join(qpcr) %>%
+  ungroup() %>%
+  arrange(desc(Fold_change_avg_NA))
+temp$`Target Name` <- factor(temp$`Target Name`, levels = unique(temp$`Target Name`))
+```
+
+```{r fig.height=5, fig.width=5}
+temp %>%
+  ggplot(aes(x = genotype, y = Delta_ct, fill = genotype)) +
+  geom_boxplot() +
+  facet_wrap(~`Target Name`, scales = "free", strip.position = "left") +
+  scale_y_continuous("Log(Relative expression to Rab35)", breaks = equal_breaks(n = 4, s = 0.05), expand = c(0.05, 0)) +
+  ggthemes::scale_fill_tableau() +
+  theme_bw(base_size = 14) +
+  theme_jc_mult +
+  theme(axis.text.x = element_blank(), strip.background = element_blank(), strip.placement = "outside", 
+        strip.text = element_text(face = "italic", colour = "black"), legend.position = "top", legend.title = element_blank(),
+        axis.ticks.x = element_blank(), axis.title.x = element_blank(), axis.text.y = element_text(size = 9))
+ggsave("plots/chemokines_skm/Delta_ct_per_significant_genes.pdf", dpi = 600)
+ggsave("plots/chemokines_skm/Delta_ct_per_significant_genes.png", dpi = 600)
 ```
 
