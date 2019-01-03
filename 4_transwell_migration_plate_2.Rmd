@@ -55,7 +55,7 @@ compare_means(percentage ~ genotype, data = df, group.by = c("celltype", "compou
 
 ## Plot
 ```{r fig.height=2.5, fig.width=6}
-compound_titles <- c(Negative_control = "Negative\ncontrol", Pdgfb = "Pdgfb", Positive_control = "Positive\ncontrol")
+compound_titles <- c(Negative_control = "Negative\ncontrol", Pdgfb = "PDGF-BB", Positive_control = "Positive\ncontrol")
 df %>%
   ggplot(aes(x = celltype, y = percentage, fill = genotype)) +
   geom_boxplot() +
@@ -103,20 +103,22 @@ ci <- df %>%
 ```
 
 ## Plot
-```{r fig.height=3, fig.width=6}
+```{r fig.height=3, fig.width=4.5}
 compound_titles <- c(pdgfb = "Pdgfb", posctrl = "Positive control")
 ci %>%
   ggplot(aes(x = celltype, y = CI, fill = genotype)) +
   geom_col(position = position_dodge(), width = 0.8) +
   geom_errorbar(aes(ymin = ylower, ymax = yupper), position = position_dodge(0.8), width = 0.2) +
+  geom_hline(yintercept = 1, linetype = 2) +
   #geom_pointrange(aes(ymin = ylower, ymax = yupper), position = position_dodge(0.8)) +
   facet_wrap(~compound, scales = "free_y", labeller = labeller(compound = compound_titles)) +
   scale_y_continuous("Chemotactic index", expand = c(0, 0)) +
   ggthemes::scale_fill_tableau() +
-  theme_bw(base_size = 16) +
+  theme_bw(base_size = 14) +
   theme(panel.border = element_blank(), panel.grid = element_blank(), strip.background = element_blank(), axis.line = element_line(colour = "black"),
         axis.ticks.y = element_line(colour = "black"), axis.text = element_text(colour = "black"), axis.title.x = element_blank(),
-        legend.title = element_blank(), strip.text = element_text(face = "italic"), axis.ticks.x = element_blank())
+        legend.title = element_blank(), strip.text = element_text(face = "italic", colour = "black"), axis.ticks.x = element_blank(),
+        legend.position = "bottom")
 ggsave("plots/migration/chemotactic_index_plate_2.pdf", dpi = 600)
 ggsave("plots/migration/chemotactic_index_plate_2.png", dpi = 600)
 ```
