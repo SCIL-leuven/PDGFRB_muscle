@@ -1,0 +1,72 @@
+---
+title: "Migration towards Pdgfb Matrigel"
+author: "Jordi Camps"
+date: "2019 M01 3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+```{r message=FALSE}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+```
+
+## Load data
+```{r}
+df <- read_excel("data/Transwell_migration_pdgf_matrigel.xlsx", col_names = TRUE)
+df
+```
+
+## Create factors
+compound
+```{r}
+df$compound2 <- plyr::revalue(df$compound, c(`neg ctrl` = "Negative\ncontrol", `12ng PDGF-BB` = "Pdgfb\n12ng", `25ng PDGF-BB` = "Pdgfb\n25ng", `30% FBS` = "Positive\ncontrol"))
+df$compound2 <- factor(df$compound2, levels = c("Negative\ncontrol", "Pdgfb\n12ng", "Pdgfb\n25ng", "Positive\ncontrol"))
+df$product <- factor(df$product, levels = c("Buffer", "PDGF-BB", "FBS"))
+```
+
+## Statistics
+```{r}
+compare_means(percentage ~ compound, data = df, group.by = "layer", method = "t.test")
+```
+
+## Plot
+```{r fig.height=5, fig.width=2.5}
+df %>%
+  ggplot(aes(x = compound2, y = percentage, fill = product, col = product)) +
+  geom_dotplot(binaxis = "y", stackdir = "center", dotsize = 3) +
+  stat_summary(fun.y = mean, fun.ymin = mean, fun.ymax = mean, geom = "crossbar", col = "black") +
+  scale_y_continuous("Percentage migrated cells") +
+  scale_color_brewer(type = "qual", palette = "Accent") +
+  scale_fill_brewer(type = "qual", palette = "Accent") +
+  facet_wrap(~layer, ncol = 1) +
+  #stat_compare_means(comparisons = my_comparisons, label = "p.signif", method = "t.test", label.x = 1) +
+  theme_bw(base_size = 14) +
+  theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"), axis.ticks = element_line(colour = "black"),
+        axis.text = element_text(colour = "black"), axis.title.x = element_blank(), strip.background = element_blank(), 
+        strip.text = element_text(face = "italic", colour = "black"), legend.position = "bottom", legend.title = element_blank(),
+        axis.text.x = element_text(size = 9))
+```
+
+```{r fig.height=6, fig.width=3}
+my_comparisons <- list(c("neg ctrl", "12ng PDGF-BB"),
+                       c("neg ctrl", "25ng PDGF-BB"),
+                       c("neg ctrl", "30% FBS"),
+                       c("12ng PDGF-BB", "25ng PDGF-BB"),
+                       c("30% FBS", "12ng PDGF-BB"),
+                       c("30% FBS", "25ng PDGF-BB"))
+df %>%
+  ggboxplot(x = "compound", y = "percentage", fill = "product") +
+  scale_fill_brewer(type = "qual", palette = "Accent") +
+  facet_wrap(~layer, ncol = 1) +
+  stat_compare_means(comparisons = my_comparisons, label = "p.signif", method = "t.test")
+ggsave("plots/migration/percentage_migration_matrigel.pdf", dpi = 600)
+ggsave("plots/migration/percentage_migration_matrigel.png", dpi = 600)
+```
