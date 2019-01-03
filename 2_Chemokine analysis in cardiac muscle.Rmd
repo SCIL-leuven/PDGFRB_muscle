@@ -1,0 +1,391 @@
+---
+title: "2_Chemokine analysis in cardiac muscle"
+author: "Jordi Camps"
+date: "21 December 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+```{r message=FALSE}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(qpcrviia7)
+library(ggrepel)
+library(limma)
+library(ggforce)
+```
+
+## Load data
+```{r}
+qpcr <- read_excel("data/Analysis PCR array hearts.xlsx", sheet = 1, col_names = FALSE)
+head(qpcr)
+```
+
+## Tidy data
+### Set colnames and remove row 1/2
+```{r}
+colnames(qpcr) <- qpcr[2, ]
+colnames(qpcr)[1] <- "Gene"
+qpcr <- qpcr[-c(1:2), ]
+```
+
+### Check tail
+```{r}
+tail(qpcr)
+```
+
+### Check columns
+```{r}
+str(qpcr)
+qpcr <- qpcr[, 1:14]
+```
+
+
+Make mouse and CT column
+```{r}
+qpcr <- gather(qpcr, "Mouse", "CT", -1)
+qpcr$CT <- as.numeric(qpcr$CT)
+```
+
+Clean up rows
+```{r}
+qpcr <- qpcr[!is.na(qpcr$Gene), ]
+qpcr <- qpcr %>%
+  filter(Gene != "average" & Gene != "STDEV" & Gene != "HKG (geomean of Gusb and Gapdh)" & Gene != "HKG")
+```
+
+
+## Quality control
+### Samples
+```{r}
+ggplot(qpcr, aes(Mouse, CT)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("CT values per sample")
+```
+
+### Genes
+```{r fig.height=3, fig.width=12}
+ggplot(qpcr, aes(Gene, CT)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("CT values per primer")
+```
+
+### Remove low CT values and set undetermined values to 40
+```{r}
+qpcr <- set_min_max_CT(df = qpcr, CT = "CT", min = 10, max = 40)
+```
+
+Split Mouse column
+```{r}
+qpcr <- separate(qpcr, into = c("Genotype", "Number"), col = Mouse, "_")
+qpcr$temp <- qpcr$Genotype
+qpcr <- unite(qpcr, col = Sample, c("temp", "Number"), sep = "_")
+```
+
+### Controls
+MGDC has to be > 35
+```{r}
+qpcr %>%
+  filter(Gene == "MGDC") %>%
+  ggplot(aes(x = Sample, y = CT)) +
+  geom_point() +
+  #geom_hline(yintercept = 35, col = "red") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("Mouse genomic DNA control")
+```
+
+Positive pcr controls
+```{r}
+qpcr %>%
+  filter(Gene == "PPC_1" | Gene == "PPC_2" | Gene == "PPC_3") %>%
+  ggplot(aes(x = Sample, y = CT)) +
+  geom_boxplot() +
+  #geom_hline(yintercept = 35, col = "red") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("PCR controls")
+```
+
+
+### HKG
+```{r}
+qpcr %>%
+  #separate(into = c("Genotype", "Number"), col = Sample, sep = "_") %>%
+  filter(Gene == "Gusb" | Gene == "Gapdh" | Gene == "Hsp90ab1" | Gene == "Actb" | Gene == "B2m") %>%
+  ggplot(aes(x = Genotype, y = CT)) +
+  geom_boxplot() +
+  facet_wrap(~Gene, scales = "free_y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("Housekeeping genes")
+```
+
+## Normalize to HKG
+normalize_hkg function
+```{r}
+normalize_hkg <- function(df, hkg, sample_col = "Sample Name", target_col = "Target Name") {
+  temp <- NULL
+  temp2 <- NULL
+  #create df with average hkg per sample
+  temp <- df[which(df[[target_col]] %in% hkg), ]
+  temp <- temp %>%
+    select_(sample_col, "CT") %>%
+    group_by_(sample_col) %>%
+    summarize(CT_hkg = gm_mean(CT, na.rm = TRUE))
+  #add avg hkg to df and calculate delta ct and rel expr
+  temp2 <- df[-which(df[[target_col]] %in% hkg), ]
+  print(temp2 %>%
+    group_by_(sample_col) %>%
+    left_join(temp) %>%
+    mutate(Delta_ct = CT_hkg - CT, Rel_expr = 2^Delta_ct)
+    )
+}
+```
+
+gm_mean function
+```{r}
+gm_mean = function(x, na.rm=TRUE){
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+```
+
+
+```{r}
+qpcr <- normalize_hkg(df = qpcr, hkg = c("Actb", "Gapdh", "Gusb", "Hsp90ab1"), sample_col = "Sample", target_col = "Gene")
+```
+
+##Normalizing sampels to each other
+Remove controls and save in new df
+```{r}
+df <- qpcr[-which(qpcr$Gene %in% c("B2m", "PPC_1", "PPC_2", "PPC_3", "MGDC", "Controls")), ]
+```
+
+Take average and standard deviation per Gene and Genotype
+```{r}
+df <- df %>%
+  ungroup() %>%
+  group_by(Gene, Genotype) %>%
+  summarise(replicates = n(), 
+            delta_ct_avg = mean(Delta_ct, na.rm = TRUE), 
+            delta_ct_sem = sd(Delta_ct, na.rm = TRUE)/sqrt(replicates)
+            ) %>%
+  mutate(delta_ct_semperc = delta_ct_sem / abs(delta_ct_avg) * 100) %>%
+  ungroup()
+```
+
+Spread genotype in separate columns
+```{r}
+df <- df %>% 
+  #remove unnecessary columns
+  select(-replicates) %>%
+  #gather avg, sem and semperc into two columns
+  gather(variable, value, -(Gene:Genotype)) %>%
+  #unite key column with genotype
+  unite(temp, Genotype, variable, sep = "_") %>%
+  #spread genotype/key column again
+  spread(temp, value)
+```
+
+Calculate fold change and propagate sem
+```{r}
+df <- df %>%
+  mutate(Sgca_vs_WT_fold_change_avg = 2^(Sgca_delta_ct_avg - WT_delta_ct_avg),
+         Sgca_vs_WT_fold_change_sem = sqrt((Sgca_delta_ct_semperc)^2 + (WT_delta_ct_semperc)^2) * Sgca_vs_WT_fold_change_avg / 100,
+         Sgcb_vs_WT_fold_change_avg = 2^(Sgcb_delta_ct_avg - WT_delta_ct_avg),
+         Sgcb_vs_WT_fold_change_sem = sqrt((Sgcb_delta_ct_semperc)^2 + (WT_delta_ct_semperc)^2) * Sgcb_vs_WT_fold_change_avg / 100,
+         Brag_vs_WT_fold_change_avg = 2^(Brag_delta_ct_avg - WT_delta_ct_avg),
+         Brag_vs_WT_fold_change_sem = sqrt((Brag_delta_ct_semperc)^2 + (WT_delta_ct_semperc)^2) * Brag_vs_WT_fold_change_avg / 100,
+         Sgcb_vs_Sgca_fold_change_avg = 2^(Sgcb_delta_ct_avg - Sgca_delta_ct_avg),
+         Sgcb_vs_Sgca_fold_change_sem = sqrt((Sgcb_delta_ct_semperc)^2 + (Sgca_delta_ct_semperc)^2) * Sgcb_vs_Sgca_fold_change_avg / 100,
+         Sgcb_vs_Brag_fold_change_avg = 2^(Sgcb_delta_ct_avg - Brag_delta_ct_avg),
+         Sgcb_vs_Brag_fold_change_sem = sqrt((Sgcb_delta_ct_semperc)^2 + (Sgca_delta_ct_semperc)^2) * Sgcb_vs_Brag_fold_change_avg / 100
+         )
+```
+
+Unite genotype in one column
+```{r}
+df <- df %>%
+  select(-(Brag_delta_ct_avg:WT_delta_ct_semperc)) %>%
+  gather(key = variable, value = value, -Gene) %>%
+  tidyr::separate(col = variable, into = c("g1", "g2", "g3", "v1", "v2", "v3")) %>%
+  unite(g1, g2, g3, col = "genotype") %>%
+  unite(v1, v2, v3, col = "temp") %>%
+  spread(key = temp, value = value)
+```
+
+Calculate ymin and ymax
+```{r}
+df %>%
+  mutate(ylower = fold_change_avg - fold_change_sem,
+         yupper = fold_change_avg + fold_change_sem)
+```
+
+## Statistics
+define groups
+```{r}
+genes <- unique(qpcr[["Gene"]])[1:84]
+groups <- data_frame(group_a = c("Sgca", "Sgcb", "Brag", "Sgcb", "Sgcb"), group_b = c("WT", "WT", "WT", "Sgca", "Brag"))
+#qpcr$Genotype <- factor(qpcr$Genotype)
+#qpcr$Gene <- factor(qpcr$Gene)
+qpcr$Genotype <- as.character(qpcr$Genotype)
+qpcr$Gene <- as.character(qpcr$Gene)
+```
+
+Perform statistical test
+```{r}
+t_data <- list()
+for (v in 1:5){
+  temp <- NULL
+  temp <- qpcr %>%
+    filter(Genotype == groups[[v, 1]] | Genotype == groups[[v, 2]])
+  #temp$Genotype <- factor(temp$Genotype)
+  for (i in 1:84){
+  temp2 <- temp %>%
+  filter(Gene == genes[i])
+  t <- t.test(Delta_ct~Genotype, data = temp2)
+  t_data[[(84*(v-1)+i)]] <- c(p_value = t$p.value, Gene = genes[i], genotype = paste(groups[v, 1], "vs", groups[v, 2], sep = "_"))
+  }
+}
+```
+
+```{r}
+tail(t_data)
+```
+
+
+Create df from statistical tests
+```{r}
+stat <- as.data.frame(t(as.data.frame(t_data, stringsAsFactors = FALSE)), stringsAsFactors = FALSE)
+stat$p_value <- as.numeric(stat$p_value)
+rownames(stat) <- NULL
+head(stat)
+```
+
+Merge statistics with fold change df
+```{r}
+df <- df %>%
+  left_join(stat, by = c("Gene", "genotype"))
+```
+
+```{r}
+df$padj <- p.adjust(df$p_value, method = "fdr")
+```
+
+Create column significant
+```{r}
+df$significant <- ifelse(df$p_value < 0.05, "p < 0.05", "Not significant")
+```
+
+## Plot
+```{r}
+theme_jc <- theme(panel.grid = element_blank(), axis.line = element_line(colour = "black", size = 0.5),
+                  axis.ticks = element_line(colour = "black", size = 0.5), axis.text = element_text(colour = "black"),
+                  panel.border = element_rect(colour = "black"))
+```
+
+Create labels for genotype
+```{r}
+df$genotype <- factor(df$genotype)
+df$genotype <- plyr::revalue(df$genotype, c(Brag_vs_WT = "Sgcb-rag / WT", Sgca_vs_WT = "Sgca / WT", Sgcb_vs_Sgca = "Sgcb / Sgca", 
+                                            Sgcb_vs_WT = "Sgcb / WT", Sgcb_vs_Brag = "Sgcb / Sgcb-rag"))
+df$genotype <- factor(df$genotype, levels = c("Sgca / WT", "Sgcb / WT", "Sgcb-rag / WT", "Sgcb / Sgca", "Sgcb / Sgcb-rag"))
+```
+
+
+### Volcano plot
+```{r fig.height=6.5, fig.width=8}
+df %>%
+  ggplot(aes(x = log(fold_change_avg, base = 2), y = -log(p_value))) +
+  geom_point(aes(col = significant), size = 1.5) +
+  #geom_text(label = df$Gene) +
+  scale_color_manual(values = c("grey", "red")) +
+  #geom_hline(yintercept = 1.3, col = "red") +
+  #geom_vline(xintercept = c(-1, 1), col = "black") +
+  geom_text_repel(data = subset(df, p_value < 0.05 & log(fold_change_avg, base = 2) > 1 | p_value < 0.05 & log(fold_change_avg, base = 2) < -1),
+                  aes(label = Gene),
+                  size = 3#,
+                  #box.padding = unit(0.35, "lines"),
+                  #point.padding = unit(0.3, "lines")
+                  ) +
+  facet_wrap(~genotype, scales = "free") +
+  scale_y_continuous("-log10 p-value") +
+  scale_x_continuous("log2 fold change") +
+  theme_bw(base_size = 16) +
+  #theme_jc +
+  theme(legend.position = "bottom", strip.background = element_blank(), legend.title = element_blank(), strip.text = element_text(face = "italic"),
+        axis.text = element_text(colour = "black"), panel.grid = element_blank(), panel.border = element_rect(colour = "black"), legend.justification = c(0,0))
+ggsave("plots/chemokines_heart/volcano_plots_chemokines_heart.pdf", dpi = 600)
+ggsave("plots/chemokines_heart/volcano_plots_chemokiens_heart.png", dpi = 600)
+```
+
+### plot intersections between mice
+```{r}
+vd <- df %>%
+  #filter only significant genes
+  filter(significant == "p < 0.05") %>%
+  #filter only mice vs WT
+  filter(genotype != "Sgcb / Sgca" & genotype != "Sgcb / Sgcb-rag") %>%
+  #select only gene and genotype column
+  select(Gene, genotype) %>%
+  #create value column
+  mutate(value = 1) %>%
+  #spread genotype column
+  spread(key = genotype, value = value)
+```
+
+Change NAs to zero
+```{r}
+vd[is.na(vd)] <- 0
+```
+
+Draw circles
+```{r fig.height=3, fig.width=4}
+df.venn <- data.frame(x = c(0, 0.866, -0.866),
+                      y = c(1, -0.5, -0.5),
+                      labels = c('Sgca', 'Sgcb', 'Sgcb-rag'))
+ggplot(df.venn, aes(x0 = x, y0 = y, r = 1.5, fill = labels)) +
+    geom_circle(alpha = .3, size = 1, colour = 'grey') +
+    scale_fill_brewer(type = "qual", palette = "Set2") +
+    coord_fixed() +
+    theme_void()
+```
+
+Create vennCounts object
+```{r}
+vd <- vd %>%
+  select(-Gene) %>%
+  as.matrix() %>%
+  limma::vennCounts()
+class(vd) <- "matrix"
+vd <- as.data.frame(vd)[-1, ] %>%
+  mutate(x = c(0, 1.2, 0.8, -1.2, -0.8, 0, 0),
+         y = c(1.2, -0.6, 0.5, -0.6, 0.5, -1, 0))
+```
+
+Plot venndiagram
+```{r fig.height=2.5, fig.width=2.5}
+ggplot(df.venn) +
+  geom_circle(aes(x0 = x, y0 = y, r = 1.5, fill = labels), alpha = .3, size = 1, colour = 'grey') +
+  coord_fixed() +
+  theme_void() +
+  scale_fill_brewer(type = "qual", palette = "Set2") +
+  theme(legend.position = 'bottom') +
+  #scale_fill_manual(values = c('cornflowerblue', 'firebrick',  'gold')) +
+  #scale_colour_manual(values = c('cornflowerblue', 'firebrick', 'gold'), guide = FALSE) +
+  labs(fill = NULL) +
+  annotate("text", x = vd$x, y = vd$y, label = vd$Counts, size = 5)
+ggsave("plots/chemokines_heart/venn_diagram_chemokines_heart.pdf", dpi = 600)
+ggsave("plots/chemokines_heart/venn_diagram_chemokines_heart.png", dpi = 600)
+```
+
