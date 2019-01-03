@@ -1,0 +1,154 @@
+---
+title: "Migration towards Pdgfb Plate 2"
+author: "Jordi Camps"
+date: "2 Januar 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+```{r message=FALSE}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+```
+
+## Load data
+```{r}
+df <- read_excel("data/Transwell_migration_pdgf_plate_2.xlsx", col_names = TRUE)
+df
+```
+
+## Create factors
+compound
+```{r}
+df$compound <- plyr::revalue(df$compound, c(assay_buffer = "Negative_control", PDGF_BB = "Pdgfb", thirty_percent_FBS = "Positive_control"))
+df$compound <- factor(df$compound, levels = c("Negative_control", "Pdgfb", "Positive_control"))
+```
+
+create genotype column
+```{r}
+df <- df %>%
+  separate(celltype, c("celltype", "mouse"), sep = " ")
+```
+
+```{r}
+df$genotype <- plyr::revalue(df$mouse, c(`WT16/17` = "Healthy", SGCB3 = "Dystrophic"))
+df$genotype <- factor(df$genotype, levels = c("Healthy", "Dystrophic"))
+head(df)
+```
+
+Celltype
+```{r}
+df$celltype <- factor(df$celltype, levels = c("MAB", "FAP"))
+```
+
+## Statistics
+```{r}
+compare_means(percentage ~ genotype, data = df, group.by = c("celltype", "compound"))
+```
+
+## Plot
+```{r fig.height=2.5, fig.width=6}
+compound_titles <- c(Negative_control = "Negative\ncontrol", Pdgfb = "Pdgfb", Positive_control = "Positive\ncontrol")
+df %>%
+  ggplot(aes(x = celltype, y = percentage, fill = genotype)) +
+  geom_boxplot() +
+  facet_wrap(~compound, scales = "free_y", labeller = labeller(compound = compound_titles)) +
+  #scale_y_continuous("Percentage", expand = c(0, 1), limits = c(0, 30)) +
+  stat_compare_means(label = "p.signif", label.x = 1) +
+  ggthemes::scale_fill_tableau() +
+  theme_bw(base_size = 14) +
+  theme(panel.border = element_blank(), 
+        panel.grid = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        axis.ticks.y = element_line(colour = "black"), 
+        axis.text = element_text(colour = "black"), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(face = "italic")
+        )
+ggsave("plots/migration/percentage_migration_plate_2.pdf", dpi = 600)
+ggsave("plots/migration/percentage_migration_plate_2.png", dpi = 600)
+```
+
+## Chemotactic index
+```{r}
+ci <- df %>%
+  select(compound, genotype, celltype, percentage) %>%
+  group_by(celltype, genotype, compound) %>%
+  summarise(replicates = n(),
+            perc_avg = mean(percentage, na.rm = TRUE),
+            perc_sem = sd(percentage, na.rm = TRUE) / sqrt(replicates) / perc_avg * 100) %>%
+  gather(key, value, -(celltype:replicates)) %>%
+  unite(col = key, compound, key) %>%
+  spread(key, value) %>%
+  mutate(CI_pdgfb = Pdgfb_perc_avg / Negative_control_perc_avg,
+         SEM_pdgfb = sqrt((Pdgfb_perc_sem)^2 + (Negative_control_perc_sem)^2) * CI_pdgfb / 100,
+         CI_posctrl = Positive_control_perc_avg / Negative_control_perc_avg,
+         SEM_posctrl = sqrt((Positive_control_perc_sem)^2 + (Negative_control_perc_sem)^2) * CI_posctrl / 100) %>%
+  select(celltype, genotype, CI_pdgfb, SEM_pdgfb, CI_posctrl, SEM_posctrl) %>%
+  gather(key, value, (CI_pdgfb:SEM_posctrl)) %>%
+  separate(key, c("variable", "compound"), sep = "_") %>%
+  spread(variable, value) %>%
+  mutate(ylower = CI - SEM,
+         yupper = CI + SEM)
+```
+
+## Plot
+```{r fig.height=3, fig.width=6}
+compound_titles <- c(pdgfb = "Pdgfb", posctrl = "Positive control")
+ci %>%
+  ggplot(aes(x = celltype, y = CI, fill = genotype)) +
+  geom_col(position = position_dodge(), width = 0.8) +
+  geom_errorbar(aes(ymin = ylower, ymax = yupper), position = position_dodge(0.8), width = 0.2) +
+  #geom_pointrange(aes(ymin = ylower, ymax = yupper), position = position_dodge(0.8)) +
+  facet_wrap(~compound, scales = "free_y", labeller = labeller(compound = compound_titles)) +
+  scale_y_continuous("Chemotactic index", expand = c(0, 0)) +
+  ggthemes::scale_fill_tableau() +
+  theme_bw(base_size = 16) +
+  theme(panel.border = element_blank(), panel.grid = element_blank(), strip.background = element_blank(), axis.line = element_line(colour = "black"),
+        axis.ticks.y = element_line(colour = "black"), axis.text = element_text(colour = "black"), axis.title.x = element_blank(),
+        legend.title = element_blank(), strip.text = element_text(face = "italic"), axis.ticks.x = element_blank())
+ggsave("plots/migration/chemotactic_index_plate_2.pdf", dpi = 600)
+ggsave("plots/migration/chemotactic_index_plate_2.png", dpi = 600)
+```
+
+## Statistics
+```{r}
+t_data <- list()
+for (i in 1:2) {
+  for (j in 1:3) {
+    temp <- df %>%
+      filter(celltype == as.character(unique(df$celltype))[i] & compound == as.character(unique(df$compound))[j])
+    t <- t.test(percentage~genotype, data = temp)
+    t_data[[3*(i-1)+j]] <- c(p_value = t$p.value, celltype = as.character(unique(df$celltype))[i], compound = as.character(unique(df$compound))[j])
+  }
+} 
+```
+
+```{r}
+head(t_data)
+```
+
+Create df from statistical list
+```{r}
+stat <- as.data.frame(t(as.data.frame(t_data, stringsAsFactors = FALSE)), stringsAsFactors = FALSE)
+stat$p_value <- as.numeric(stat$p_value)
+rownames(stat) <- NULL
+head(stat)
+```
+
+Merge with ci
+```{r}
+stat$compound <- plyr::revalue(stat$compound, c(Negative_control = "negctrl", Pdgfb = "pdgfb", Positive_control = "posctrl"))
+ci %>%
+  inner_join(stat, by = c("celltype", "compound"))
+```
