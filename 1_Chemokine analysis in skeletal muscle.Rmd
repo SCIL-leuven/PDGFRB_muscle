@@ -1,0 +1,321 @@
+---
+title: "qPCR chemokines SkM"
+author: "Jordi Camps"
+date: "2018 M12 14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+```{r message=FALSE}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(qpcrviia7)
+```
+
+## Load data
+```{r}
+qpcr <- read_excel("data/2016-02-09 174725_Chemokines_WT_Sgca_skMuscle_Jordi-ViiA7-export.xlsx", sheet = 3, skip = 35, col_names = TRUE)
+#Change CT row in numeric
+qpcr$CT <- as.numeric(qpcr$CT)
+head(qpcr)
+```
+
+### Select columns to use
+```{r}
+qpcr <- qpcr[, c("Sample Name", "Target Name", "CT")]
+```
+
+## Annotation
+### Read annotation file
+```{r}
+anno <- read_excel("data/2016-02-09 174725_Chemokines_WT_Sgca_skMuscle_Jordi-annotation.xlsx", col_names = TRUE)
+```
+
+### Merge annotation file
+```{r}
+qpcr <- qpcr %>%
+  left_join(anno, by = "Sample Name")
+```
+
+## Quality control
+### Samples
+```{r fig.height=4, fig.width=5}
+ggplot(qpcr, aes(`Sample Name`, CT)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle("CT values per sample")
+```
+
+### Genes
+```{r fig.height=4, fig.width=6}
+ggplot(qpcr, aes(`Target Name`, CT)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle("CT values per primer")
+```
+
+### Remove low CT values and set undetermined values to 40
+```{r}
+set_min_max_CT <- function(df, CT = "CT", min = 10, max = 40) {
+  df[[CT]][is.na(df[[CT]])] <- max
+  df[[CT]][df[[CT]] > max] <- max
+  df[[CT]][df[[CT]] < min] <- NA
+df
+}
+```
+
+```{r}
+qpcr <- set_min_max_CT(df = qpcr, CT = "CT", min = 10, max = 40)
+```
+
+### Remove blank and WT4
+```{r}
+qpcr <- qpcr %>%
+  filter(`Sample Name` != "Blanc" & `Sample Name` != "WT4")
+```
+
+### HKG
+```{r fig.height=4, fig.width=4}
+qpcr %>%
+  filter(`Target Name` == "Rpl13a" | `Target Name` == "Psma3" | `Target Name` == "Rab35") %>%
+  ggplot(aes(x = `Target Name`, y = CT, fill = genotype)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  ggtitle("Housekeeping genes")
+```
+
+```{r}
+qpcr %>%
+  filter(`Target Name` == "Rpl13a" | `Target Name` == "Psma3" | `Target Name` == "Rab35") %>%
+  select(`Sample Name`, `Target Name`, CT) %>%
+  spread(key = `Target Name`, value = CT)
+```
+
+## Normalize to HKG
+### normalize function
+```{r}
+normalize_hkg <- function(df, hkg) {
+  temp <- NULL
+  temp <- df[df$`Target Name` == hkg, ]
+  temp <- temp %>%
+    #filter(`Target Name` == hkg) %>%
+    select(`Sample Name`, CT) %>%
+    group_by(`Sample Name`) %>%
+    summarize(CT_hkg = gm_mean(CT, na.rm = TRUE))
+  
+  temp2 <- df[df$`Target Name` != hkg, ]
+  print(temp2 %>%
+    group_by(`Sample Name`) %>%
+    left_join(temp, by = "Sample Name") %>%
+    #mutate(CT = replace(CT, is.na(CT_avg_hkg), NA)) %>%
+    mutate(Delta_ct = CT_hkg - CT, rel_expr = 2^-Delta_ct) #%>%
+    #arrange(Target)
+    )
+}
+```
+
+### Geometric mean function
+```{r}
+gm_mean = function(x, na.rm=TRUE){
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+```
+
+
+```{r}
+qpcr <- normalize_hkg(df = qpcr, hkg = c("Rab35", "Rpl13a", "Psma3"))
+```
+
+
+## Plot
+### Create plotting theme
+```{r}
+theme_jc_mult <- theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(size = .75, colour = "black"),
+                  axis.ticks = element_line(size = .75, colour = "black"), axis.text = element_text(colour = "black"))
+theme_jc_one <- theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(size = 1, colour = "black"),
+                  axis.ticks = element_line(size = 1, colour = "black"), axis.text = element_text(colour = "black"))
+```
+
+```{r}
+qpcr$genotype <- factor(qpcr$genotype, levels = c("Healthy", "Dystrophic"))
+```
+
+```{r}
+p <- qpcr %>%
+  #filter(`Target Name` != "Rpl13a" & `Target Name` != "Psma3") %>%
+  ggplot(aes(x = genotype, y = Delta_ct, fill = genotype)) +
+  geom_boxplot() +
+  facet_wrap(~`Target Name`, scales = "free", strip.position = "left")
+```
+
+```{r fig.height=5, fig.width=10}
+p + 
+  scale_y_continuous("Log(Relative expression to Rab35)") +
+  ggthemes::scale_fill_tableau() +
+  theme_bw(base_size = 14) +
+  theme_jc_mult +
+  theme(axis.text.x = element_blank(), strip.background = element_blank(), strip.placement = "outside", 
+        strip.text = element_text(face = "italic", colour = "black"),
+        axis.ticks.x = element_blank(), axis.title.x = element_blank(), axis.text.y = element_text(size = 10))
+ggsave("plots/chemokines_skm/Delta_ct_per_gene.pdf", dpi = 600)
+ggsave("plots/chemokines_skm/Delta_ct_per_gene.png", dpi = 600)
+```
+
+## normalize dystrophic to healthy sample
+### Take average and standard deviation per Gene and Genotype
+```{r}
+df <- qpcr %>%
+  ungroup() %>%
+  group_by(`Target Name`, genotype) %>%
+  summarise(replicates = n(), 
+            Delta_ct_avg = mean(Delta_ct, na.rm = TRUE), 
+            Delta_ct_sem = sd(Delta_ct, na.rm = TRUE)/sqrt(replicates)#,
+            #Rel_expr_avg = mean(rel_expr, na.rm = TRUE),
+            #Rel_expr_sem = sd(rel_expr, na.rm = TRUE)/sqrt(replicates)
+            ) %>%
+  mutate(Delta_ct_sem_perc = Delta_ct_sem / Delta_ct_avg * 100) %>%
+  ungroup()
+```
+
+### Spread genotype in seperate columns
+```{r}
+df <- df %>% 
+  gather(variable, value, -(`Target Name`:replicates)) %>%
+  unite(temp, genotype, variable, sep = ".") %>%
+  spread(temp, value)
+```
+
+### Calculate fold change and propagate sem
+```{r}
+df <- df %>%
+  mutate(Dystrophic.Fold_change_avg = 2^(Dystrophic.Delta_ct_avg - Healthy.Delta_ct_avg),
+         Dystrophic.Fold_change_sem = sqrt((Dystrophic.Delta_ct_sem_perc)^2 + (Healthy.Delta_ct_sem_perc)^2) * Dystrophic.Fold_change_avg / 100,
+         Healthy.Fold_change_avg = 1,
+         Healthy.Fold_change_sem = 0
+         )
+```
+
+### Unite genotype again in one column
+```{r}
+df <- df %>%
+  gather(Dystrophic.Delta_ct_avg:Healthy.Fold_change_sem, key = variable, value = value) %>%
+  tidyr::separate(col = variable, into = c("Genotype", "temp1", "temp2", "temp3", "temp4")) %>%
+  unite(temp1, temp2, temp3, temp4, col = "temp") %>%
+  spread(key = temp, value = value)
+```
+
+### Log transform fold change and sem
+```{r}
+df <- df %>%
+  mutate(Log_Fold_change_avg_NA = log(Fold_change_avg_NA),
+         Log_Fold_change_sem_NA = Fold_change_sem_NA/(Log_Fold_change_avg_NA * log(10)))
+```
+
+
+### Calculate ymin and ymax
+```{r}
+df <- df %>%
+  mutate(ymin = Log_Fold_change_avg_NA - Log_Fold_change_sem_NA, 
+         ymax = Log_Fold_change_avg_NA + Log_Fold_change_sem_NA)
+```
+
+### Statistics
+perform t-test dystrophic vs healthy and implement in the plot
+```{r}
+genes <- unique(qpcr[["Target Name"]])
+t_data <- list()
+
+for (i in 1:21){
+  temp <- qpcr %>%
+  filter(`Target Name` == genes[i])
+t <- wilcox.test(Delta_ct~genotype, data = temp)
+t_data[[i]] <- c(p_value = t$p.value, `Target Name` = genes[i])
+}
+```
+
+```{r}
+stat <- as.data.frame(t(as.data.frame(t_data, stringsAsFactors = FALSE)), stringsAsFactors = FALSE)
+stat$p_value <- as.numeric(stat$p_value)
+stat
+```
+
+```{r}
+df <- df %>%
+  left_join(stat, by = "Target Name")
+```
+
+### Create boolean for p-value and prepare plotting
+```{r}
+p <- df %>%
+  mutate(sign = p_value <= 0.05) %>%
+  ungroup() %>%
+  filter(`Target Name` != "Rpl13a" & `Target Name` != "Rab35") %>%
+  filter(Genotype == "Dystrophic") %>%
+  arrange(desc(Fold_change_avg_NA)) %>%
+  mutate(order = row_number())
+```
+
+### Plot
+```{r fig.height=5, fig.width=2.5}
+p %>%
+  ggplot(aes(x = order, y = rev(Log_Fold_change_avg_NA), fill = rev(sign))) +
+    geom_col(position = position_dodge(), width = 0.8) +
+    geom_errorbar(aes(ymin = rev(ymin), ymax = rev(ymax)), position = position_dodge(0.9), width = 0.25) +
+    geom_hline(yintercept = log(1), color = "red", size = 1) +
+    scale_fill_manual(values = c("#bababa", "#1a1a1a"), labels = c("p > 0.05", "p < 0.05")) +
+    scale_y_continuous("Log(fold change)\nDystrophic vs Healthy\nskeletal muscle", expand = c(0, 0.1)) +
+    scale_x_continuous(breaks = p$order, labels = rev(p$`Target Name`), expand = c(0, 0)) +
+    coord_flip() +
+    theme_bw(base_size = 14) +
+    theme_jc_one +
+    theme(axis.title.y = element_blank(), legend.position = "top", legend.title = element_blank(), 
+          axis.text.y = element_text(size = 12, face = "italic"), axis.ticks.y = element_blank())
+ggsave("plots/chemokines_skm/fold_change_Dys_vs_wt.pdf", dpi = 600)
+```
+
+## Plot only significant genes
+### Equal breaks function
+```{r}
+equal_breaks <- function(n = 3, s = 0.05, ...){
+  function(x){
+    # rescaling
+    d <- s * diff(range(x)) / (1+2*s)
+    round(seq(min(x)+d, max(x)-d, length=n), 1)
+  }
+}
+```
+
+
+### Select siginificant genes and order df according to highest fold change
+```{r fig.height=4, fig.width=6}
+temp <- p %>%
+  filter(sign == TRUE) %>%
+  select(`Target Name`, sign, Fold_change_avg_NA) %>%
+  inner_join(qpcr) %>%
+  ungroup() %>%
+  arrange(desc(Fold_change_avg_NA))
+temp$`Target Name` <- factor(temp$`Target Name`, levels = unique(temp$`Target Name`))
+```
+
+```{r fig.height=5, fig.width=5}
+temp %>%
+  ggplot(aes(x = genotype, y = Delta_ct, fill = genotype)) +
+  geom_boxplot() +
+  facet_wrap(~`Target Name`, scales = "free", strip.position = "left") +
+  scale_y_continuous("Log(Relative expression to Rab35)", breaks = equal_breaks(n = 4, s = 0.05), expand = c(0.05, 0)) +
+  ggthemes::scale_fill_tableau() +
+  theme_bw(base_size = 14) +
+  theme_jc_mult +
+  theme(axis.text.x = element_blank(), strip.background = element_blank(), strip.placement = "outside", 
+        strip.text = element_text(face = "italic", colour = "black"), legend.position = "top", legend.title = element_blank(),
+        axis.ticks.x = element_blank(), axis.title.x = element_blank(), axis.text.y = element_text(size = 9))
+ggsave("plots/chemokines_skm/Delta_ct_per_significant_genes.pdf", dpi = 600)
+ggsave("plots/chemokines_skm/Delta_ct_per_significant_genes.png", dpi = 600)
+```
+
