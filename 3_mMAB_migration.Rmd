@@ -1,0 +1,129 @@
+---
+title: "3_mMAB_migration"
+author: "Jordi Camps"
+date: "7 January 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+```{r message=FALSE}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(qpcrviia7)
+library(ggpubr)
+```
+
+## Load data
+```{r}
+qpcr <- read_excel("data/fig3-4_qPCR_cells/2015-11-27 154613 Muscle_progenitors Migration1-ViiA7-export.xls", sheet = 1, col_names = TRUE, skip = 35)
+head(qpcr)
+```
+
+## Include sample
+Check lab book for correct sample names
+
+```{r}
+
+```
+
+## Creating numeric CT column and change undetermined values into 40
+```{r}
+qpcr$CT <- as.numeric(qpcr$CT)
+qpcr[is.na(qpcr$CT), "CT"] <- 40
+```
+
+## Quality control
+### Samples
+```{r fig.height=4, fig.width=6}
+ggplot(qpcr, aes(Sample_Name, CT)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("CT values per sample")
+```
+
+### Genes
+```{r fig.height=4, fig.width=6}
+ggplot(qpcr, aes(`Target Name`, CT)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("CT values per primer")
+```
+
+## Remove blanc
+```{r}
+qpcr <- filter(qpcr, Sample_Name != "Blanc")
+```
+
+## Change low CT values to NA
+```{r}
+qpcr[qpcr$CT < 10, "CT"] <- NA
+```
+
+## Check HKG over samples
+```{r}
+qpcr %>%
+  filter(`Target Name` == "Psma3" | `Target Name` == "Rab35" | `Target Name` == "Rpl13a") %>%
+  ggplot(aes(x = CT)) +
+    geom_histogram(bins = 6) +
+    facet_wrap(~`Target Name`, scales = "free_x")
+```
+
+## Normalize to HKG
+normalize_hkg function
+```{r}
+normalize_hkg <- function(df, hkg, sample_col = "Sample Name", target_col = "Target Name") {
+  temp <- NULL
+  temp2 <- NULL
+  #create df with average hkg per sample
+  temp <- df[which(df[[target_col]] %in% hkg), ]
+  temp <- temp %>%
+    select_(sample_col, "CT") %>%
+    group_by_(sample_col) %>%
+    summarize(CT_hkg = gm_mean(CT, na.rm = TRUE))
+  #add avg hkg to df and calculate delta ct and rel expr
+  temp2 <- df[-which(df[[target_col]] %in% hkg), ]
+  print(temp2 %>%
+    group_by_(sample_col) %>%
+    left_join(temp) %>%
+    mutate(Delta_ct = CT_hkg - CT, Rel_expr = 2^Delta_ct)
+    )
+}
+```
+
+gm_mean function
+```{r}
+gm_mean = function(x, na.rm=TRUE){
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+```
+
+```{r}
+qpcr <- normalize_hkg(df = qpcr, hkg = "Rpl13a", sample_col = "Sample_Name", target_col = "Target Name")
+```
+
+## Plot
+```{r fig.height=5, fig.width=10}
+qpcr %>%
+  filter(`Target Name` != "Psma3" & `Target Name` != "Rab35") %>%
+  ggplot(aes(x = Sample_Name, y = Rel_expr)) +
+  geom_point() +
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize = 3) +
+  #stat_summary(fun.y = mean, fun.ymax = mean, fun.ymin = mean, col = "black", geom = "Crossbar") +
+  facet_wrap(~`Target Name`, scales = "free") +
+  scale_y_continuous("Relative expression to Rpl13a") +
+  theme_bw(base_size = 12) +
+  theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"), 
+        axis.ticks.x = element_blank(), axis.ticks.y = element_line(colour = "black"), axis.text.x = element_blank(), 
+        axis.text.y = element_text(colour = "black", size = 8), axis.title.x = element_blank(), strip.background = element_blank(),
+        strip.text = element_text(face = "italic"))
+#ggsave("plots/cells/hMAB_receptors.pdf", dpi = 600)
+#ggsave("plots/cells/hMAB_receptors.png", dpi = 600)
+```

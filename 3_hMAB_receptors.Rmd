@@ -1,0 +1,136 @@
+---
+title: "4 human MAB qPCR"
+author: "Jordi Camps"
+date: "5 January 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+```{r message=FALSE}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(qpcrviia7)
+library(ggpubr)
+```
+
+## Load data
+```{r}
+qpcr <- read_excel("data/fig3-4_qPCR_cells/Receptors hMABs.xlsx", sheet = 1, col_names = TRUE)
+head(qpcr)
+```
+
+## Clean file
+```{r}
+qpcr <- qpcr[,1:3]
+head(qpcr)
+```
+
+## Add column cell type
+```{r}
+temp <- data_frame(Sample = c("RA2", "RA5", "RA7", "SkM1", "SkM3", "SkM5", "CE75", "NORM"), 
+                   Celltype = c("cMAB", "cMAB", "cMAB", "skMAB", "skMAB", "skMAB", "fibro", "fibro"))
+qpcr <- left_join(qpcr, temp)
+```
+
+## Creating numeric CT column and change undetermined values into 40
+```{r}
+qpcr$CT <- as.numeric(qpcr$CT)
+qpcr[is.na(qpcr$CT), "CT"] <- 40
+```
+
+## Quality control
+### Samples
+```{r fig.height=4, fig.width=6}
+ggplot(qpcr, aes(Sample, CT)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("CT values per sample")
+```
+
+### Genes
+```{r fig.height=4, fig.width=6}
+ggplot(qpcr, aes(Gene, CT)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("CT values per primer")
+```     
+
+## Change low CT values to NA
+```{r}
+qpcr[qpcr$CT < 10, "CT"] <- NA
+```
+
+## Remove blanc
+```{r}
+qpcr <- filter(qpcr, Sample != "bl")
+```
+
+## Check HKG over samples
+```{r}
+qpcr %>%
+  filter(Gene == "GUSB" | Gene == "LOC" | Gene == "RPL13A" | Gene == "TMEM85") %>%
+  ggplot(aes(y = CT, x = Celltype)) +
+    geom_boxplot() +
+    facet_wrap(~Gene, scales = "free_y")
+```
+
+
+## Normalize to HKG
+normalize_hkg function
+```{r}
+normalize_hkg <- function(df, hkg, sample_col = "Sample Name", target_col = "Target Name") {
+  temp <- NULL
+  temp2 <- NULL
+  #create df with average hkg per sample
+  temp <- df[which(df[[target_col]] %in% hkg), ]
+  temp <- temp %>%
+    select_(sample_col, "CT") %>%
+    group_by_(sample_col) %>%
+    summarize(CT_hkg = gm_mean(CT, na.rm = TRUE))
+  #add avg hkg to df and calculate delta ct and rel expr
+  temp2 <- df[-which(df[[target_col]] %in% hkg), ]
+  print(temp2 %>%
+    group_by_(sample_col) %>%
+    left_join(temp) %>%
+    mutate(Delta_ct = CT_hkg - CT, Rel_expr = 2^Delta_ct)
+    )
+}
+```
+
+gm_mean function
+```{r}
+gm_mean = function(x, na.rm=TRUE){
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+```
+
+```{r}
+qpcr <- normalize_hkg(df = qpcr, hkg = "RPL13A", sample_col = "Sample", target_col = "Gene")
+```
+
+## Plot
+```{r fig.height=3, fig.width=5}
+qpcr %>%
+  filter(Gene != "GUSB" & Gene != "LOC" & Gene != "NDE1" & Gene != "TMEM85" & Gene != "MEF2C" & Gene != "NKX2-5" & Gene != "PECAM1") %>%
+  ggplot(aes(x = Celltype, y = Rel_expr, col = Celltype, fill = Celltype)) +
+  geom_dotplot(binaxis = "y", stackdir = "center", dotsize = 3) +
+  stat_summary(fun.y = mean, fun.ymax = mean, fun.ymin = mean, col = "black", geom = "Crossbar") +
+  facet_wrap(~Gene, scales = "free") +
+  scale_y_continuous("Relative expression to RPL13A") +
+  theme_bw(base_size = 12) +
+  theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"), 
+        axis.ticks.x = element_blank(), axis.ticks.y = element_line(colour = "black"), axis.text.x = element_blank(), 
+        axis.text.y = element_text(colour = "black", size = 8), axis.title.x = element_blank(), strip.background = element_blank(),
+        strip.text = element_text(face = "italic"))
+ggsave("plots/cells/hMAB_receptors.pdf", dpi = 600)
+ggsave("plots/cells/hMAB_receptors.png", dpi = 600)
+```
+
