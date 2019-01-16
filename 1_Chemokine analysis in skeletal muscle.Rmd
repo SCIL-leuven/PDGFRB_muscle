@@ -14,13 +14,15 @@ knitr::opts_chunk$set(echo = TRUE)
 library(readxl)
 library(tidyr)
 library(dplyr)
+library(tibble)
 library(ggplot2)
 library(qpcrviia7)
+library(ggpubr)
 ```
 
 ## Load data
 ```{r}
-qpcr <- read_excel("data/2016-02-09 174725_Chemokines_WT_Sgca_skMuscle_Jordi-ViiA7-export.xlsx", sheet = 3, skip = 35, col_names = TRUE)
+qpcr <- read_excel("data/fig1_skeletal_muscle/2016-02-09 174725_Chemokines_WT_Sgca_skMuscle_Jordi-ViiA7-export.xlsx", sheet = 3, skip = 35, col_names = TRUE)
 #Change CT row in numeric
 qpcr$CT <- as.numeric(qpcr$CT)
 head(qpcr)
@@ -34,13 +36,19 @@ qpcr <- qpcr[, c("Sample Name", "Target Name", "CT")]
 ## Annotation
 ### Read annotation file
 ```{r}
-anno <- read_excel("data/2016-02-09 174725_Chemokines_WT_Sgca_skMuscle_Jordi-annotation.xlsx", col_names = TRUE)
+anno <- read_excel("data/fig1_skeletal_muscle/2016-02-09 174725_Chemokines_WT_Sgca_skMuscle_Jordi-annotation.xlsx", col_names = TRUE)
 ```
 
 ### Merge annotation file
 ```{r}
 qpcr <- qpcr %>%
   left_join(anno, by = "Sample Name")
+```
+
+## Creating numeric CT column and change undetermined values into 40
+```{r}
+qpcr$CT <- as.numeric(qpcr$CT)
+qpcr[is.na(qpcr$CT), "CT"] <- 40
 ```
 
 ## Quality control
@@ -60,18 +68,9 @@ ggplot(qpcr, aes(`Target Name`, CT)) +
   ggtitle("CT values per primer")
 ```
 
-### Remove low CT values and set undetermined values to 40
+### Change low CT values to NA
 ```{r}
-set_min_max_CT <- function(df, CT = "CT", min = 10, max = 40) {
-  df[[CT]][is.na(df[[CT]])] <- max
-  df[[CT]][df[[CT]] > max] <- max
-  df[[CT]][df[[CT]] < min] <- NA
-df
-}
-```
-
-```{r}
-qpcr <- set_min_max_CT(df = qpcr, CT = "CT", min = 10, max = 40)
+qpcr[qpcr$CT < 10, "CT"] <- NA
 ```
 
 ### Remove blank and WT4
@@ -127,17 +126,15 @@ gm_mean = function(x, na.rm=TRUE){
 }
 ```
 
-
 ```{r}
 qpcr <- normalize_hkg(df = qpcr, hkg = c("Rab35", "Rpl13a", "Psma3"))
 ```
 
-
 ## Plot
 ### Create plotting theme
 ```{r}
-theme_jc_mult <- theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(size = .75, colour = "black"),
-                  axis.ticks = element_line(size = .75, colour = "black"), axis.text = element_text(colour = "black"))
+theme_jc_mult <- theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"),
+                  axis.ticks = element_line(colour = "black"), axis.text = element_text(colour = "black"))
 theme_jc_one <- theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(size = 1, colour = "black"),
                   axis.ticks = element_line(size = 1, colour = "black"), axis.text = element_text(colour = "black"))
 ```
@@ -156,7 +153,7 @@ p <- qpcr %>%
 
 ```{r fig.height=5, fig.width=10}
 p + 
-  scale_y_continuous("Log(Relative expression to Rab35)") +
+  scale_y_continuous("Log(Relative expression)") +
   ggthemes::scale_fill_tableau() +
   theme_bw(base_size = 14) +
   theme_jc_mult +
@@ -269,13 +266,13 @@ p %>%
     geom_errorbar(aes(ymin = rev(ymin), ymax = rev(ymax)), position = position_dodge(0.9), width = 0.25) +
     geom_hline(yintercept = log(1), color = "red", size = 1) +
     scale_fill_manual(values = c("#bababa", "#1a1a1a"), labels = c("p > 0.05", "p < 0.05")) +
-    scale_y_continuous("Log(fold change)\nDystrophic vs Healthy\nskeletal muscle", expand = c(0, 0.1)) +
+    scale_y_continuous("Log(fold change) Dystrophic\nvs Healthy skeletal muscle", expand = c(0, 0.1)) +
     scale_x_continuous(breaks = p$order, labels = rev(p$`Target Name`), expand = c(0, 0)) +
     coord_flip() +
-    theme_bw(base_size = 14) +
+    theme_bw(base_size = 12) +
     theme_jc_one +
     theme(axis.title.y = element_blank(), legend.position = "top", legend.title = element_blank(), 
-          axis.text.y = element_text(size = 12, face = "italic"), axis.ticks.y = element_blank())
+          axis.text.y = element_text(size = 12, face = "italic"), axis.ticks.y = element_blank(), axis.title.x = element_text(hjust = 1))
 ggsave("plots/chemokines_skm/fold_change_Dys_vs_wt.pdf", dpi = 600)
 ```
 
@@ -290,7 +287,6 @@ equal_breaks <- function(n = 3, s = 0.05, ...){
   }
 }
 ```
-
 
 ### Select siginificant genes and order df according to highest fold change
 ```{r fig.height=4, fig.width=6}
@@ -308,7 +304,7 @@ temp %>%
   ggplot(aes(x = genotype, y = Delta_ct, fill = genotype)) +
   geom_boxplot() +
   facet_wrap(~`Target Name`, scales = "free", strip.position = "left") +
-  scale_y_continuous("Log(Relative expression to Rab35)", breaks = equal_breaks(n = 4, s = 0.05), expand = c(0.05, 0)) +
+  scale_y_continuous("Delta CT", breaks = equal_breaks(n = 4, s = 0.05), expand = c(0.05, 0)) +
   ggthemes::scale_fill_tableau() +
   theme_bw(base_size = 14) +
   theme_jc_mult +
@@ -317,5 +313,144 @@ temp %>%
         axis.ticks.x = element_blank(), axis.title.x = element_blank(), axis.text.y = element_text(size = 9))
 ggsave("plots/chemokines_skm/Delta_ct_per_significant_genes.pdf", dpi = 600)
 ggsave("plots/chemokines_skm/Delta_ct_per_significant_genes.png", dpi = 600)
+```
+
+### Select specific genes and plot
+#### CC chemokines
+```{r}
+genes <- c("Ccl3", "Ccl4", "Ccl12", "Ccl7", "Ccl8", "Ccl17", "Ccl22", "Ccl24", "Ccl5", "Ccl6", "Ccl9", "Ccl28", "Ccl25")
+cc <- qpcr[qpcr$`Target Name` %in% genes, ]
+order <- tbl_df(cc) %>%
+  filter(genotype == "Healthy") %>%
+  group_by(`Target Name`, genotype) %>%
+  #top_n(n = 5, wt = Delta_ct) %>%
+  summarise(avg_delta_ct = median(Delta_ct, na.rm = TRUE)) %>%
+  arrange(avg_delta_ct) %>%
+  ungroup() %>%
+  mutate(order = row_number()) %>%
+  select(`Target Name`, order)
+```
+
+
+```{r fig.height=2.75, fig.width=4.5}
+cc <- cc %>%
+  left_join(order)
+cc %>%
+  ggplot(aes(x = factor(order), y = Delta_ct, fill = genotype)) +
+  geom_boxplot(col = "black") +
+  #facet_wrap(~`Target Name`, scales = "free", strip.position = "top") +
+  scale_y_continuous("Delta CT") +
+  scale_x_discrete(breaks = cc$order, labels = cc$`Target Name`) +
+  stat_compare_means(label = "p.signif", method = "t.test", hide.ns = TRUE) +
+  ggthemes::scale_fill_tableau() +
+  theme_bw(base_size = 12) +
+  theme_jc_mult +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "italic"), strip.background = element_blank(), strip.placement = "outside", 
+        legend.position = "top", legend.title = element_blank(),
+        axis.ticks.x = element_line(), axis.title.x = element_blank(), axis.text.y = element_text(size = 9))
+ggsave("plots/chemokines_skm/cc_chemokines.pdf", dpi = 600)
+ggsave("plots/chemokines_skm/cc_chemokines.png", dpi = 600)
+```
+
+#### CXC and CX3C chemokines
+```{r}
+genes <- c("Cx3cl1", "Sdf1")
+cxc <- temp[temp$`Target Name` %in% genes, ]
+order <- tbl_df(cxc) %>%
+  filter(genotype == "Healthy") %>%
+  group_by(`Target Name`, genotype) %>%
+  #top_n(n = 5, wt = Delta_ct) %>%
+  summarise(avg_delta_ct = median(Delta_ct, na.rm = TRUE)) %>%
+  arrange(avg_delta_ct) %>%
+  ungroup() %>%
+  mutate(order = row_number()) %>%
+  select(`Target Name`, order)
+```
+
+```{r fig.height=1.75, fig.width=2}
+cxc <- cxc %>%
+  left_join(order)
+cxc %>%
+  ggplot(aes(x = factor(order), y = Delta_ct, fill = genotype)) +
+  geom_boxplot(col = "black") +
+  #facet_wrap(~`Target Name`, scales = "free", strip.position = "top") +
+  scale_y_continuous("Delta CT", expand = c(0.05, 0)) +
+  scale_x_discrete(breaks = cxc$order, labels = cxc$`Target Name`) +
+  stat_compare_means(label = "p.signif", method = "t.test", hide.ns = TRUE) +
+  ggthemes::scale_fill_tableau() +
+  theme_bw(base_size = 12) +
+  theme_jc_mult +
+  theme(axis.text.x = element_text(face = "italic"), strip.background = element_blank(), strip.placement = "outside", 
+        strip.text = element_text(face = "italic", colour = "black"), legend.position = "none", legend.title = element_blank(),
+        axis.ticks.x = element_line(), axis.title.x = element_blank(), axis.text.y = element_text(size = 9))
+ggsave("plots/chemokines_skm/cxc_chemokines.pdf", dpi = 600)
+ggsave("plots/chemokines_skm/cxc_chemokines.png", dpi = 600)
+```
+
+#### Growth factors
+```{r}
+genes <- c("Pdgfa", "Pdgfb")
+gf <- temp[temp$`Target Name` %in% genes, ]
+order <- tbl_df(gf) %>%
+  filter(genotype == "Healthy") %>%
+  group_by(`Target Name`, genotype) %>%
+  #top_n(n = 5, wt = Delta_ct) %>%
+  summarise(avg_delta_ct = median(Delta_ct, na.rm = TRUE)) %>%
+  arrange(avg_delta_ct) %>%
+  ungroup() %>%
+  mutate(order = row_number()) %>%
+  select(`Target Name`, order)
+```
+
+```{r fig.height=1.75, fig.width=2}
+gf <- gf %>%
+  left_join(order)
+gf %>%
+  ggplot(aes(x = factor(order), y = Delta_ct, fill = genotype)) +
+  geom_boxplot(col = "black") +
+  #facet_wrap(~`Target Name`, scales = "free", strip.position = "top") +
+  scale_y_continuous("Delta CT", expand = c(0.05, 0)) +
+  scale_x_discrete(breaks = gf$order, labels = gf$`Target Name`) +
+  stat_compare_means(label = "p.signif", method = "t.test", hide.ns = TRUE) +
+  ggthemes::scale_fill_tableau() +
+  theme_bw(base_size = 12) +
+  theme_jc_mult +
+  theme(axis.text.x = element_text(face = "italic"), strip.background = element_blank(), strip.placement = "outside", 
+        strip.text = element_text(face = "italic", colour = "black"), legend.position = "none", legend.title = element_blank(),
+        axis.ticks.x = element_line(), axis.title.x = element_blank(), axis.text.y = element_text(size = 9))
+ggsave("plots/chemokines_skm/pdgf_chemokines.pdf", dpi = 600)
+ggsave("plots/chemokines_skm/pdgf_chemokines.png", dpi = 600)
+```
+
+## Combine fold change and delta CT
+```{r fig.height=3, fig.width=3}
+p %>%
+  ggplot(aes(x = Delta_ct_avg_NA, y = log(Fold_change_avg_NA), label = `Target Name`)) +
+  #geom_point() +
+  geom_text() +
+  theme_bw(base_size = 12)
+```
+
+```{r fig.height=4.5, fig.width=3.5}
+temp <- p %>%
+  arrange(Fold_change_avg_NA) %>%
+  mutate(order = row_number())
+
+temp %>%
+  ggplot(aes(x = order, y = log(Fold_change_avg_NA))) +
+  #geom_linerange(aes(x = order, ymin = 0, ymax = log(Fold_change_avg_NA))) +
+  geom_point(aes(col = sign, size = Delta_ct_avg_NA)) +
+  scale_x_continuous(breaks = temp$order, labels = temp$`Target Name`, expand = c(0, 0.5)) +
+  scale_y_continuous("Log(Fold change)", limits = c(0,5), expand = c(0, 0)) +
+  scale_color_manual(values = c("slategrey", "sienna1"), labels = c("p > 0.05", "p < 0.05")) +
+  scale_size_continuous("Log(expr)") +
+  coord_flip() +
+  guides(colour = guide_legend(order = 1), size = guide_legend(order = 2)) +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "right", panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"), 
+        axis.ticks = element_line(colour = "black"), axis.text = element_text(colour = "black"), axis.title.y = element_blank(),
+        axis.text.y = element_text(face = "italic"))
+ggsave("plots/chemokines_skm/bubble_chart.pdf", dpi = 600)
+ggsave("plots/chemokines_skm/bubble_chart.png", dpi = 600)
 ```
 
