@@ -19,11 +19,12 @@ library(qpcrviia7)
 library(ggrepel)
 library(limma)
 library(ggforce)
+library(xlsx)
 ```
 
 ## Load data
 ```{r}
-qpcr <- read_excel("data/Analysis PCR array hearts.xlsx", sheet = 1, col_names = FALSE)
+qpcr <- read_excel("data/fig2_cardiac_muscle/Analysis PCR array hearts.xlsx", sheet = 1, col_names = FALSE)
 head(qpcr)
 ```
 
@@ -47,10 +48,11 @@ qpcr <- qpcr[, 1:14]
 ```
 
 
-Make mouse and CT column
+Make mouse and CT column plus change undetermined values to 40
 ```{r}
 qpcr <- gather(qpcr, "Mouse", "CT", -1)
 qpcr$CT <- as.numeric(qpcr$CT)
+qpcr[is.na(qpcr$CT), "CT"] <- 40
 ```
 
 Clean up rows
@@ -63,7 +65,7 @@ qpcr <- qpcr %>%
 
 ## Quality control
 ### Samples
-```{r}
+```{r fig.height=3, fig.width=4}
 ggplot(qpcr, aes(Mouse, CT)) +
   geom_boxplot() +
   theme_bw() +
@@ -80,9 +82,9 @@ ggplot(qpcr, aes(Gene, CT)) +
   ggtitle("CT values per primer")
 ```
 
-### Remove low CT values and set undetermined values to 40
+### Remove low CT values
 ```{r}
-qpcr <- set_min_max_CT(df = qpcr, CT = "CT", min = 10, max = 40)
+qpcr[qpcr$CT < 10, "CT"] <- NA
 ```
 
 Split Mouse column
@@ -94,7 +96,7 @@ qpcr <- unite(qpcr, col = Sample, c("temp", "Number"), sep = "_")
 
 ### Controls
 MGDC has to be > 35
-```{r}
+```{r fig.height=3, fig.width=4}
 qpcr %>%
   filter(Gene == "MGDC") %>%
   ggplot(aes(x = Sample, y = CT)) +
@@ -106,7 +108,7 @@ qpcr %>%
 ```
 
 Positive pcr controls
-```{r}
+```{r fig.height=3, fig.width=4}
 qpcr %>%
   filter(Gene == "PPC_1" | Gene == "PPC_2" | Gene == "PPC_3") %>%
   ggplot(aes(x = Sample, y = CT)) +
@@ -119,7 +121,7 @@ qpcr %>%
 
 
 ### HKG
-```{r}
+```{r fig.height=3, fig.width=4}
 qpcr %>%
   #separate(into = c("Genotype", "Number"), col = Sample, sep = "_") %>%
   filter(Gene == "Gusb" | Gene == "Gapdh" | Gene == "Hsp90ab1" | Gene == "Actb" | Gene == "B2m") %>%
@@ -208,8 +210,8 @@ df <- df %>%
          Brag_vs_WT_fold_change_sem = sqrt((Brag_delta_ct_semperc)^2 + (WT_delta_ct_semperc)^2) * Brag_vs_WT_fold_change_avg / 100,
          Sgcb_vs_Sgca_fold_change_avg = 2^(Sgcb_delta_ct_avg - Sgca_delta_ct_avg),
          Sgcb_vs_Sgca_fold_change_sem = sqrt((Sgcb_delta_ct_semperc)^2 + (Sgca_delta_ct_semperc)^2) * Sgcb_vs_Sgca_fold_change_avg / 100,
-         Sgcb_vs_Brag_fold_change_avg = 2^(Sgcb_delta_ct_avg - Brag_delta_ct_avg),
-         Sgcb_vs_Brag_fold_change_sem = sqrt((Sgcb_delta_ct_semperc)^2 + (Sgca_delta_ct_semperc)^2) * Sgcb_vs_Brag_fold_change_avg / 100
+         Brag_vs_Sgcb_fold_change_avg = 2^(Brag_delta_ct_avg - Sgcb_delta_ct_avg),
+         Brag_vs_Sgcb_fold_change_sem = sqrt((Brag_delta_ct_semperc)^2 + (Sgcb_delta_ct_semperc)^2) * Brag_vs_Sgcb_fold_change_avg / 100
          )
 ```
 
@@ -235,7 +237,7 @@ df %>%
 define groups
 ```{r}
 genes <- unique(qpcr[["Gene"]])[1:84]
-groups <- data_frame(group_a = c("Sgca", "Sgcb", "Brag", "Sgcb", "Sgcb"), group_b = c("WT", "WT", "WT", "Sgca", "Brag"))
+groups <- data_frame(group_a = c("Sgca", "Sgcb", "Brag", "Sgcb", "Brag"), group_b = c("WT", "WT", "WT", "Sgca", "Sgcb"))
 #qpcr$Genotype <- factor(qpcr$Genotype)
 #qpcr$Gene <- factor(qpcr$Gene)
 qpcr$Genotype <- as.character(qpcr$Genotype)
@@ -289,21 +291,24 @@ df$significant <- ifelse(df$p_value < 0.05, "p < 0.05", "Not significant")
 
 ## Plot
 ```{r}
-theme_jc <- theme(panel.grid = element_blank(), axis.line = element_line(colour = "black", size = 0.5),
-                  axis.ticks = element_line(colour = "black", size = 0.5), axis.text = element_text(colour = "black"),
+theme_jc <- theme(panel.grid = element_blank(), axis.line = element_line(colour = "black"),
+                  axis.ticks = element_line(colour = "black"), axis.text = element_text(colour = "black"),
                   panel.border = element_rect(colour = "black"))
 ```
 
 Create labels for genotype
 ```{r}
 df$genotype <- factor(df$genotype)
-df$genotype <- plyr::revalue(df$genotype, c(Brag_vs_WT = "Sgcb-rag / WT", Sgca_vs_WT = "Sgca / WT", Sgcb_vs_Sgca = "Sgcb / Sgca", 
-                                            Sgcb_vs_WT = "Sgcb / WT", Sgcb_vs_Brag = "Sgcb / Sgcb-rag"))
-df$genotype <- factor(df$genotype, levels = c("Sgca / WT", "Sgcb / WT", "Sgcb-rag / WT", "Sgcb / Sgca", "Sgcb / Sgcb-rag"))
+df$genotype <- plyr::revalue(df$genotype, c(Brag_vs_WT = "ID Sgcb-null / Wild-type", Sgca_vs_WT = "Sgca-null / Wild-type", 
+                                            Sgcb_vs_Sgca = "IC Sgcb-null / Sgca-null", 
+                                            Sgcb_vs_WT = "IC Sgcb-null / Wild-type", Brag_vs_Sgcb = "ID Sgcb-null / IC Sgcb-null"))
+df$genotype <- factor(df$genotype, levels = c("Sgca-null / Wild-type", "IC Sgcb-null / Wild-type", "ID Sgcb-null / Wild-type", 
+                                              "IC Sgcb-null / Sgca-null", "ID Sgcb-null / IC Sgcb-null"))
 ```
 
 
 ### Volcano plot
+#### Plot everything together
 ```{r fig.height=6.5, fig.width=8}
 df %>%
   ggplot(aes(x = log(fold_change_avg, base = 2), y = -log(p_value))) +
@@ -329,13 +334,299 @@ ggsave("plots/chemokines_heart/volcano_plots_chemokines_heart.pdf", dpi = 600)
 ggsave("plots/chemokines_heart/volcano_plots_chemokiens_heart.png", dpi = 600)
 ```
 
+Create column for color values to plot
+```{r}
+DE <- df %>%
+  filter(significant == "p < 0.05") %>%
+  mutate(DE = log(fold_change_avg) > 0) %>%
+  select(Gene, genotype, DE)
+df <- df %>%
+  left_join(DE, by = c("Gene", "genotype"))
+df$DE[is.na(df$DE)] <- "Not significant"
+df$DE <- as.character(df$DE)
+df$DE <- plyr::revalue(df$DE, c("Not significant" = "Not significant", "TRUE" = "Up", "FALSE" = "Down"))
+df$DE <- factor(df$DE, levels = c("Down", "Up", "Not significant"))
+```
+
+#### Sgca vs wt
+plot
+```{r fig.height=3, fig.width=2.4}
+temp <- df %>%
+  filter(genotype == "Sgca-null / Wild-type")
+temp %>%
+  ggplot(aes(x = log(fold_change_avg, base = 2), y = -log(p_value))) +
+  geom_point(aes(col = DE), size = 3) +
+  #geom_text(label = df$Gene) +
+  scale_color_manual(values = c("#4575b4", "#d73027", "grey")) +
+  #geom_hline(yintercept = 1.3, col = "red") +
+  #geom_vline(xintercept = c(-1, 1), col = "black") +
+  geom_text_repel(data = subset(temp, p_value < 0.05),
+                  aes(label = Gene),
+                  size = 2.5#,
+                  #box.padding = unit(0.35, "lines"),
+                  #point.padding = unit(0.3, "lines")
+                  ) +
+  #facet_wrap(~genotype, scales = "free") +
+  scale_y_continuous("-log10 p-value") +
+  scale_x_continuous("log2 fold change") +
+  theme_bw(base_size = 12) +
+  ggtitle("Sgca-null / Wild-type") +
+  #theme_jc +
+  theme(legend.position = "bottom", strip.background = element_blank(), legend.title = element_blank(), strip.text = element_text(face = "italic"),
+        axis.text = element_text(colour = "black"), panel.grid = element_blank(), panel.border = element_rect(colour = "black"), 
+        legend.justification = c(0,0), axis.ticks = element_line(colour = "black"), plot.title = element_text(face = "italic", hjust = 0.5)) +
+  theme(legend.key.height = unit(0, "cm"), plot.margin = unit(c(0,0.5,0,0), "lines"))
+ggsave("plots/chemokines_heart/volcano_plots_chemokines_heart_sgca_wt.pdf", dpi = 600)
+ggsave("plots/chemokines_heart/volcano_plots_chemokiens_heart_sgca_wt.png", dpi = 600)
+```
+
+Export excel
+```{r}
+df %>%
+  filter(genotype == "Sgca-null / Wild-type") %>%
+  write.xlsx(file = "tables/sgca_wt.xlsx")
+```
+
+#### Sgcb vs wt
+```{r fig.height=3, fig.width=2.4}
+temp <- df %>%
+  filter(genotype == "IC Sgcb-null / Wild-type")
+temp %>%
+  ggplot(aes(x = log(fold_change_avg, base = 2), y = -log(p_value))) +
+  geom_point(aes(col = DE), size = 3) +
+  #geom_text(label = df$Gene) +
+  scale_color_manual(values = c("#d73027", "grey")) +
+  #geom_hline(yintercept = 1.3, col = "red") +
+  #geom_vline(xintercept = c(-1, 1), col = "black") +
+  geom_text_repel(data = subset(temp, p_value < 0.05),
+                  aes(label = Gene),
+                  size = 2.5#,
+                  #box.padding = unit(0.35, "lines"),
+                  #point.padding = unit(0.3, "lines")
+                  ) +
+  #facet_wrap(~genotype, scales = "free") +
+  scale_y_continuous("-log10 p-value") +
+  scale_x_continuous("log2 fold change") +
+  theme_bw(base_size = 12) +
+  #ggthemes::geom_rangeframe() +
+  #ggthemes::theme_tufte() +
+  ggtitle("IC Sgcb-null / Wild-type") +
+  #theme(legend.position = "bottom") +
+  theme(legend.position = "bottom", strip.background = element_blank(), legend.title = element_blank(), strip.text = element_text(face = "italic"),
+        axis.text = element_text(colour = "black"), panel.grid = element_blank(), 
+        panel.border = element_rect(colour = "black"), 
+        #panel.border = element_blank(),
+        #axis.line = element_line(colour = "black"),
+        legend.justification = c(0,0), axis.ticks = element_line(colour = "black"), plot.title = element_text(face = "italic", hjust = 0.5)) +
+  theme(legend.key.height = unit(0, "cm"), plot.margin = unit(c(0,0.5,0,0), "lines"))
+ggsave("plots/chemokines_heart/volcano_plots_chemokines_heart_sgcb_wt.pdf", dpi = 600)
+ggsave("plots/chemokines_heart/volcano_plots_chemokiens_heart_sgcb_wt.png", dpi = 600)
+```
+
+Export excel
+```{r}
+df %>%
+  filter(genotype == "IC Sgcb-null / Wild-type") %>%
+  write.xlsx(file = "tables/ic_sgcb_wt.xlsx")
+```
+
+#### Sgcb-rag vs wt
+```{r fig.height=3, fig.width=2.4}
+temp <- df %>%
+  filter(genotype == "ID Sgcb-null / Wild-type")
+temp %>%
+  ggplot(aes(x = log(fold_change_avg, base = 2), y = -log(p_value))) +
+  geom_point(aes(col = DE), size = 3) +
+  #geom_text(label = df$Gene) +
+  scale_color_manual(values = c("#4575b4", "#d73027", "grey")) +
+  #geom_hline(yintercept = 1.3, col = "red") +
+  #geom_vline(xintercept = c(-1, 1), col = "black") +
+  geom_text_repel(data = subset(temp, p_value < 0.05),
+                  aes(label = Gene),
+                  size = 2.5#,
+                  #box.padding = unit(0.35, "lines"),
+                  #point.padding = unit(0.3, "lines")
+                  ) +
+  #facet_wrap(~genotype, scales = "free") +
+  scale_y_continuous("-log10 p-value") +
+  scale_x_continuous("log2 fold change") +
+  theme_bw(base_size = 12) +
+  #ggthemes::geom_rangeframe() +
+  #ggthemes::theme_tufte() +
+  ggtitle("ID Sgcb-null / Wild-type") +
+  #theme(legend.position = "bottom") +
+  theme(legend.position = "bottom", strip.background = element_blank(), legend.title = element_blank(), strip.text = element_text(face = "italic"),
+        axis.text = element_text(colour = "black"), panel.grid = element_blank(), 
+        panel.border = element_rect(colour = "black"), 
+        #panel.border = element_blank(),
+        #axis.line = element_line(colour = "black"),
+        legend.justification = c(0,0), axis.ticks = element_line(colour = "black"), plot.title = element_text(face = "italic", hjust = 0.5)) +
+  theme(legend.key.height = unit(0, "cm"), plot.margin = unit(c(0,0.5,0,0), "lines"))
+ggsave("plots/chemokines_heart/volcano_plots_chemokines_heart_brag_wt.pdf", dpi = 600)
+ggsave("plots/chemokines_heart/volcano_plots_chemokiens_heart_brag_wt.png", dpi = 600)
+```
+
+Export excel
+```{r}
+df %>%
+  filter(genotype == "ID Sgcb-null / Wild-type") %>%
+  write.xlsx(file = "tables/id_sgcb_wt.xlsx")
+```
+
+filter downregulated and upregulated genes
+```{r fig.height=2.5, fig.width=5.25}
+df %>%
+  filter(significant == "p < 0.05") %>%
+  filter(genotype != "IC Sgcb-null / Sgca-null" & genotype != "ID Sgcb-null / IC Sgcb-null") %>%
+  ggplot(aes(x = DE, fill = DE)) +
+  geom_bar(width = 0.4) +
+  scale_y_continuous(expand = c(0, 0)) +
+  #scale_x_discrete(labels = c("Down", "Up")) +
+  facet_wrap(~genotype, nrow = 1, strip.position = "bottom") +
+  scale_fill_manual(values = c("#4575b4", "#d73027")) +
+  theme_bw(base_size = 12) +
+  theme_jc +
+  theme(legend.position = "bottom", axis.title.x = element_blank(), panel.border = element_blank(), axis.ticks.x = element_blank(),
+        strip.background = element_blank(), strip.text = element_text(face = "italic", colour = "black", margin = margin(0, 0, 0.1, 0, "cm")), axis.text.x = element_blank(), 
+        legend.title = element_blank(), strip.placement = "outside") +
+  theme(legend.key.height = unit(0, "cm"), plot.margin = unit(c(0.5,0.5,0,0), "lines"))
+ggsave("plots/chemokines_heart/count_DE_dystrophy_wt.pdf", dpi = 600)
+ggsave("plots/chemokines_heart/count_DE_dystrophy_wt.png", dpi = 600)
+```
+
+#### Sgcb vs sgca
+```{r fig.height=3, fig.width=2.4}
+temp <- df %>%
+  filter(genotype == "IC Sgcb-null / Sgca-null")
+temp %>%
+  ggplot(aes(x = log(fold_change_avg, base = 2), y = -log(p_value))) +
+  geom_point(aes(col = DE), size = 3) +
+  #geom_text(label = df$Gene) +
+  scale_color_manual(values = c("#4575b4", "#d73027", "grey")) +
+  #geom_hline(yintercept = 1.3, col = "red") +
+  #geom_vline(xintercept = c(-1, 1), col = "black") +
+  geom_text_repel(data = subset(temp, p_value < 0.05),
+                  aes(label = Gene),
+                  size = 2.5#,
+                  #box.padding = unit(0.35, "lines"),
+                  #point.padding = unit(0.3, "lines")
+                  ) +
+  #facet_wrap(~genotype, scales = "free") +
+  scale_y_continuous("-log10 p-value") +
+  scale_x_continuous("log2 fold change") +
+  theme_bw(base_size = 12) +
+  #ggthemes::geom_rangeframe() +
+  #ggthemes::theme_tufte() +
+  ggtitle("IC Sgcb-null / Sgca-null") +
+  #theme(legend.position = "bottom") +
+  theme(legend.position = "bottom", strip.background = element_blank(), legend.title = element_blank(), strip.text = element_text(face = "italic"),
+        axis.text = element_text(colour = "black"), panel.grid = element_blank(), 
+        panel.border = element_rect(colour = "black"), 
+        #panel.border = element_blank(),
+        #axis.line = element_line(colour = "black"),
+        legend.justification = c(0,0), axis.ticks = element_line(colour = "black"), plot.title = element_text(face = "italic", hjust = 0.5)) +
+  theme(legend.key.height = unit(0, "cm"), plot.margin = unit(c(0,0.5,0,0), "lines"))
+ggsave("plots/chemokines_heart/volcano_plots_chemokines_heart_sgcb_sgca.pdf", dpi = 600)
+ggsave("plots/chemokines_heart/volcano_plots_chemokiens_heart_sgcb_sgca.png", dpi = 600)
+```
+
+filter downregulated and upregulated genes
+```{r fig.height=3, fig.width=1.25}
+df %>%
+  filter(significant == "p < 0.05") %>%
+  filter(genotype == "IC Sgcb-null / Sgca-null") %>%
+  ggplot(aes(x = DE, fill = DE)) +
+  geom_bar(width = .8) +
+  scale_y_continuous(expand = c(0, 0), breaks = c(4, 8, 12)) +
+  #scale_x_discrete(labels = c("Down", "Up")) +
+  #facet_wrap(~genotype, nrow = 1) +
+  scale_fill_manual(values = c("#4575b4", "#d73027")) +
+  theme_bw(base_size = 12) +
+  theme_jc +
+  theme(legend.position = "bottom", axis.title.x = element_blank(), panel.border = element_blank(), axis.ticks.x = element_blank(),
+        strip.background = element_blank(), strip.text = element_text(face = "italic"), axis.text.x = element_blank(), legend.title = element_blank()) +
+  theme(legend.key.height = unit(0, "cm"), plot.margin = unit(c(1,0.5,0,0), "lines"))
+ggsave("plots/chemokines_heart/count_DE_sgcb_sgca.pdf", dpi = 600)
+ggsave("plots/chemokines_heart/count_DE_sgcb_sgca.png", dpi = 600)
+```
+
+Export excel
+```{r}
+df %>%
+  filter(genotype == "IC Sgcb-null / Sgca-null") %>%
+  write.xlsx(file = "tables/ic_sgcb_sgca.xlsx")
+```
+
+#### Brag vs sgcb
+```{r fig.height=3, fig.width=2.4}
+temp <- df %>%
+  filter(genotype == "ID Sgcb-null / IC Sgcb-null")
+temp %>%
+  ggplot(aes(x = log(fold_change_avg, base = 2), y = -log(p_value))) +
+  geom_point(aes(col = DE), size = 3) +
+  #geom_text(label = df$Gene) +
+  scale_color_manual(values = c("#4575b4", "grey")) +
+  #geom_hline(yintercept = 1.3, col = "red") +
+  #geom_vline(xintercept = c(-1, 1), col = "black") +
+  geom_text_repel(data = subset(temp, p_value < 0.05),
+                  aes(label = Gene),
+                  size = 2.5#,
+                  #box.padding = unit(0.35, "lines"),
+                  #point.padding = unit(0.3, "lines")
+                  ) +
+  #facet_wrap(~genotype, scales = "free") +
+  scale_y_continuous("-log10 p-value") +
+  scale_x_continuous("log2 fold change") +
+  theme_bw(base_size = 12) +
+  #ggthemes::geom_rangeframe() +
+  #ggthemes::theme_tufte() +
+  ggtitle("ID Sgcb-null / IC Sgcb-null") +
+  #theme(legend.position = "bottom") +
+  theme(legend.position = "bottom", strip.background = element_blank(), legend.title = element_blank(), strip.text = element_text(face = "italic"),
+        axis.text = element_text(colour = "black"), panel.grid = element_blank(), 
+        panel.border = element_rect(colour = "black"), 
+        #panel.border = element_blank(),
+        #axis.line = element_line(colour = "black"),
+        legend.justification = c(0,0), axis.ticks = element_line(colour = "black"), plot.title = element_text(face = "italic", hjust = 0.8)) +
+  theme(legend.key.height = unit(0, "cm"), plot.margin = unit(c(0,0.5,0,0), "lines"))
+ggsave("plots/chemokines_heart/volcano_plots_chemokines_heart_sgcb_brag.pdf", dpi = 600)
+ggsave("plots/chemokines_heart/volcano_plots_chemokiens_heart_sgcb_brag.png", dpi = 600)
+```
+
+Export excel
+```{r}
+df %>%
+  filter(genotype == "ID Sgcb-null / IC Sgcb-null") %>%
+  write.xlsx(file = "tables/id_sgcb_ic_sgcb.xlsx")
+```
+
+filter downregulated and upregulated genes
+```{r fig.height=3, fig.width=.8}
+df %>%
+  filter(significant == "p < 0.05") %>%
+  filter(genotype == "ID Sgcb-null / IC Sgcb-null") %>%
+  ggplot(aes(x = DE, fill = DE)) +
+  geom_bar(width = .8) +
+  scale_y_continuous(expand = c(0, 0), breaks = c(5, 10, 15)) +
+  #scale_x_discrete(labels = c("Down", "Up")) +
+  #facet_wrap(~genotype, nrow = 1) +
+  scale_fill_manual(values = c("#4575b4", "#d7191c")) +
+  theme_bw(base_size = 12) +
+  theme_jc +
+  theme(legend.position = "bottom", axis.title.x = element_blank(), panel.border = element_blank(), axis.ticks.x = element_blank(),
+        strip.background = element_blank(), strip.text = element_text(face = "italic"), axis.text.x = element_blank(), legend.title = element_blank()) +
+  theme(legend.key.height = unit(0, "cm"), plot.margin = unit(c(1,0,0,0), "lines"))
+ggsave("plots/chemokines_heart/count_DE_brag_sgcb.pdf", dpi = 600)
+ggsave("plots/chemokines_heart/count_DE_brag_sgcb.png", dpi = 600)
+```
+
 ### plot intersections between mice
 ```{r}
 vd <- df %>%
   #filter only significant genes
   filter(significant == "p < 0.05") %>%
   #filter only mice vs WT
-  filter(genotype != "Sgcb / Sgca" & genotype != "Sgcb / Sgcb-rag") %>%
+  filter(genotype != "IC Sgcb-null / Sgca-null" & genotype != "ID Sgcb-null / IC Sgcb-null") %>%
   #select only gene and genotype column
   select(Gene, genotype) %>%
   #create value column
@@ -353,10 +644,10 @@ Draw circles
 ```{r fig.height=3, fig.width=4}
 df.venn <- data.frame(x = c(0, 0.866, -0.866),
                       y = c(1, -0.5, -0.5),
-                      labels = c('Sgca', 'Sgcb', 'Sgcb-rag'))
+                      labels = c('Sgca-null', 'IC Sgcb-null', 'ID Sgcb-null'))
 ggplot(df.venn, aes(x0 = x, y0 = y, r = 1.5, fill = labels)) +
     geom_circle(alpha = .3, size = 1, colour = 'grey') +
-    scale_fill_brewer(type = "qual", palette = "Set2") +
+    scale_fill_brewer(type = "qual", palette = "Pastel1") +
     coord_fixed() +
     theme_void()
 ```
@@ -374,17 +665,17 @@ vd <- as.data.frame(vd)[-1, ] %>%
 ```
 
 Plot venndiagram
-```{r fig.height=2.5, fig.width=2.5}
+```{r fig.height=3.25, fig.width=3.25}
 ggplot(df.venn) +
   geom_circle(aes(x0 = x, y0 = y, r = 1.5, fill = labels), alpha = .3, size = 1, colour = 'grey') +
   coord_fixed() +
   theme_void() +
-  scale_fill_brewer(type = "qual", palette = "Set2") +
+  scale_fill_brewer(type = "qual", palette = "Pastel1") +
   theme(legend.position = 'bottom') +
   #scale_fill_manual(values = c('cornflowerblue', 'firebrick',  'gold')) +
   #scale_colour_manual(values = c('cornflowerblue', 'firebrick', 'gold'), guide = FALSE) +
   labs(fill = NULL) +
-  annotate("text", x = vd$x, y = vd$y, label = vd$Counts, size = 5)
+  annotate("text", x = vd$x, y = vd$y, label = vd$Counts, size = 6)
 ggsave("plots/chemokines_heart/venn_diagram_chemokines_heart.pdf", dpi = 600)
 ggsave("plots/chemokines_heart/venn_diagram_chemokines_heart.png", dpi = 600)
 ```
