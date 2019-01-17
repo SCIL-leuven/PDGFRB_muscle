@@ -1,7 +1,7 @@
 ---
-title: "3_mMAB_migration"
+title: "3_mMAB_migration_2"
 author: "Jordi Camps"
-date: "7 January 2019"
+date: "2019 M01 9"
 output: html_document
 ---
 
@@ -21,15 +21,15 @@ library(ggpubr)
 
 ## Load data
 ```{r}
-qpcr <- read_excel("data/fig3-4_qPCR_cells/2015-11-27 154613 Muscle_progenitors Migration1-ViiA7-export.xls", sheet = 1, col_names = TRUE, skip = 35)
+qpcr <- read_excel("data/fig3-4_qPCR_cells/2016-08-17 125944 Muscle progenitors migration2-ViiA7-export.xls", sheet = 1, col_names = TRUE, skip = 35)
 head(qpcr)
 ```
 
 ## Include sample
 Check lab book for correct sample names
 ```{r}
-qpcr$Sample <- qpcr$Sample_Name
-qpcr <- separate(qpcr, Sample_Name, c("Celltype", "Mouse"), sep = " ")
+qpcr$Sample <- qpcr$`Sample Name`
+qpcr <- separate(qpcr, `Sample Name`, c("Celltype", "Mouse"), sep = " ")
 ```
 
 ## Creating numeric CT column and change undetermined values into 40
@@ -111,9 +111,9 @@ qpcr <- normalize_hkg(df = qpcr, hkg = "Rpl13a", sample_col = "Sample", target_c
 ```
 
 ## Plot
-```{r fig.height=4, fig.width=8}
+```{r fig.height=5, fig.width=10}
 qpcr %>%
-  filter(`Target Name` != "Psma3" & `Target Name` != "Rab35" & `Target Name` != "Mmp9") %>%
+  filter(`Target Name` != "Psma3" & `Target Name` != "Rab35") %>%
   ggplot(aes(x = Celltype, y = Rel_expr, col = Celltype, fill = Celltype)) +
   #geom_point() +
   geom_dotplot(binaxis = "y", stackdir = "center", dotsize = 3) +
@@ -127,6 +127,6 @@ qpcr %>%
         axis.ticks.x = element_blank(), axis.ticks.y = element_line(colour = "black"), axis.text.x = element_blank(), 
         axis.text.y = element_text(colour = "black", size = 8), axis.title.x = element_blank(), strip.background = element_blank(),
         strip.text = element_text(face = "italic"))
-ggsave("plots/cells/mMAB_migration_receptors.pdf", dpi = 600)
-ggsave("plots/cells/mMAB_migration_receptors.png", dpi = 600)
+#ggsave("plots/cells/mMAB_migration_receptors.pdf", dpi = 600)
+#ggsave("plots/cells/mMAB_migration_receptors.png", dpi = 600)
 ```
