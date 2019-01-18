@@ -1,0 +1,107 @@
+---
+title: "4_transwell migration merge plate 1_2"
+author: "Jordi Camps"
+date: "2019 M01 18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+```{r message=FALSE}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+```
+
+## Load data
+```{r}
+df1 <- read_excel("data/fig5-6_migration/Transwell_migration_pdgf_Plate_1.xlsx", col_names = TRUE)
+df2 <- read_excel("data/fig5-6_migration/Transwell_migration_pdgf_Plate_2.xlsx", col_names = TRUE)
+head(df1)
+tail(df1)
+head(df2)
+tail(df2)
+```
+
+## Clean data
+### Compound
+```{r}
+df1$compound <- plyr::revalue(df1$compound, c(`Assay buffer` = "Negative\ncontrol", `PDGF-BB 25ng` = "PDGF-BB", `30% FBS` = "Positive\ncontrol"))
+df1$compound <- factor(df1$compound, levels = c("Negative\ncontrol", "PDGF-BB", "Positive\ncontrol"))
+```
+
+```{r}
+df2$compound <- plyr::revalue(df2$compound, c(assay_buffer = "Negative\ncontrol", PDGF_BB = "PDGF-BB", thirty_percent_FBS = "Positive\ncontrol"))
+df2$compound <- factor(df2$compound, levels = c("Negative\ncontrol", "PDGF-BB", "Positive\ncontrol"))
+```
+
+### genotype
+```{r}
+df1$genotype <- plyr::revalue(df1$genotype, c(SGCB2 = "Dystrophic", WT = "Healthy"))
+df1$genotype <- factor(df1$genotype, levels = c("Healthy", "Dystrophic"))
+head(df1)
+```
+
+```{r}
+df2 <- df2 %>%
+  separate(celltype, c("celltype", "mouse"), sep = " ")
+```
+
+```{r}
+df2$genotype <- plyr::revalue(df2$mouse, c(`WT16/17` = "Healthy", SGCB3 = "Dystrophic"))
+df2$genotype <- factor(df2$genotype, levels = c("Healthy", "Dystrophic"))
+head(df2)
+```
+
+### row_column
+```{r}
+df2 <- separate(df2, row_column, c("row", "column"), sep = "_")
+```
+
+## merge dataframes
+```{r}
+df <- bind_rows(mutate_all(df1, as.character), mutate_all(df2, as.character))
+head(df)
+```
+
+## Plot
+```{r fig.height=3.5, fig.width=6}
+my_comparisons = list(c("Negative\ncontrol", "PDGF-BB"), c("Negative\ncontrol", "Positive\ncontrol"), c("PDGF-BB", "Positive\ncontrol"))
+df %>%
+  filter(Plate == 1 & celltype == "MAB" & genotype == "Dystrophic" & compound != "Positive\ncontrol" | 
+           Plate == 1 & celltype == "FAP" & genotype == "Healthy" & compound != "Positive\ncontrol" |
+           Plate == 2 & celltype == "MAB" & genotype == "Dystrophic" & compound == "Positive\ncontrol" |
+           Plate == 2 & celltype == "FAP" & genotype == "Healthy" & compound == "Positive\ncontrol") %>%
+  ggplot(aes(x = compound, y = as.numeric(percentage), col = compound)) +
+  geom_boxplot(size = 1.2, outlier.shape = NA) +
+  geom_jitter(width = 0.3, size = 2) +
+  facet_wrap(~factor(celltype, levels = c("MAB", "FAP")), strip.position = "bottom") +
+  scale_y_continuous("Percentage") +
+  stat_compare_means(label = "p.signif", label.x = 1, method = "t.test", comparisons = my_comparisons) +
+  #stat_compare_means(label.y = 50) +
+  #ggthemes::scale_fill_tableau() +
+  scale_color_brewer(type = "qual", palette = "Accent") +
+  theme_bw(base_size = 16) +
+  theme(panel.border = element_blank(), 
+        panel.grid = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        axis.ticks.y = element_line(colour = "black"), 
+        axis.text = element_text(colour = "black"), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(color = "black"),
+        axis.text.x = element_blank(),
+        strip.placement = "outside",
+        legend.key.height = unit(0, "cm"),
+        plot.margin = unit(c(0.5, 0, 0, 0.5), "lines")
+        )
+ggsave("plots/migration/percentage_migration_plate_1&2_filtered.pdf", dpi = 600)
+ggsave("plots/migration/percentage_migration_plate_1&2_filtered.png", dpi = 600)
+```
