@@ -20,7 +20,7 @@ library(ggpubr)
 
 ## Load data
 ```{r}
-df <- read_excel("data/Transwell_migration_pdgf_Plate_1.xlsx", col_names = TRUE)
+df <- read_excel("data/fig5-6_migration/Transwell_migration_pdgf_Plate_1.xlsx", col_names = TRUE)
 head(df)
 ```
 
@@ -50,7 +50,7 @@ compare_means(percentage ~ genotype, data = df, group.by = c("celltype", "compou
 
 ## Plot
 ```{r fig.height=2.5, fig.width=6}
-compound_titles <- c(Negative_control = "Negative\ncontrol", Pdgfb = "Pdgfb", Positive_control = "Positive\ncontrol")
+compound_titles <- c(Negative_control = "Negative\ncontrol", Pdgfb = "PDGF-BB", Positive_control = "Positive\ncontrol")
 df %>%
   ggplot(aes(x = celltype, y = percentage, fill = genotype)) +
   geom_boxplot() +
@@ -73,6 +73,46 @@ df %>%
 ggsave("plots/migration/percentage_migration_plate_1.pdf", dpi = 600)
 ggsave("plots/migration/percentage_migration_plate_1.png", dpi = 600)
 ```
+
+Plot filtered plots
+```{r fig.height=2, fig.width=5}
+compound_titles <- c(Negative_control = "Negative\ncontrol", Pdgfb = "PDGF-BB", Positive_control = "Positive\ncontrol")
+df$compound <- plyr::revalue(df$compound, compound_titles)
+```
+
+```{r fig.height=3.5, fig.width=7}
+my_comparisons = list(c("Negative\ncontrol", "PDGF-BB"), c("Negative\ncontrol", "Positive\ncontrol"), c("PDGF-BB", "Positive\ncontrol"))
+df %>%
+  filter(genotype == "Healthy" & celltype == "FAP" | genotype == "Dystrophic" & celltype == "MAB") %>%
+  ggplot(aes(x = compound, y = percentage, col = compound)) +
+  geom_boxplot(size = 1.2, outlier.shape = NA) +
+  geom_jitter(width = 0.3, size = 2) +
+  facet_wrap(~celltype, strip.position = "bottom") +
+  scale_y_continuous("Percentage") +
+  stat_compare_means(label = "p.signif", label.x = 1, method = "t.test", comparisons = my_comparisons) +
+  #stat_compare_means(label.y = 50) +
+  #ggthemes::scale_fill_tableau() +
+  scale_color_brewer(type = "qual", palette = "Accent") +
+  theme_bw(base_size = 16) +
+  theme(panel.border = element_blank(), 
+        panel.grid = element_blank(), 
+        axis.line = element_line(colour = "black"),
+        axis.ticks.y = element_line(colour = "black"), 
+        axis.text = element_text(colour = "black"), 
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        strip.background = element_blank(),
+        strip.text = element_text(face = "italic"),
+        axis.text.x = element_blank(),
+        strip.placement = "outside",
+        legend.key.height = unit(0, "cm"),
+        plot.margin = unit(c(0.5, 0, 0, 0.5), "lines")
+        )
+ggsave("plots/migration/percentage_migration_plate_1_filtered.pdf", dpi = 600)
+ggsave("plots/migration/percentage_migration_plate_1_filtered.png", dpi = 600)
+```
+
 
 ## Chemotactic index
 ```{r}
