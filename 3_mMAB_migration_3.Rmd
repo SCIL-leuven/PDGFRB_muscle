@@ -1,0 +1,138 @@
+---
+title: "3_mMAB_migration_3"
+author: "Jordi Camps"
+date: "20 January 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+```{r message=FALSE}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(qpcrviia7)
+library(ggpubr)
+```
+
+## Load data
+```{r}
+qpcr <- read_excel("data/fig3-4_qPCR_cells/2019-01-17 JC Mouse cells chemokine receptors.xls", sheet = 3, col_names = TRUE, skip = 35)
+head(qpcr)
+```
+
+## Clean dataframe
+```{r}
+qpcr <- qpcr[, c("Sample Name", "Target Name", "CT")]
+qpcr <- qpcr %>% 
+  separate(`Sample Name`, c("Celltype", "Sample Name 1", "Sample Name 2"), sep = " ") %>%
+  separate(Celltype, c("Celltype", "Sample Name 3"), sep = "-") %>%
+  unite(`Sample Name`, c("Sample Name 1", "Sample Name 2", "Sample Name 3"), sep = "_")
+qpcr$Celltype <- plyr::revalue(qpcr$Celltype, c(FAP = "FAP", DP = "MAB", `AP+` = "MAB", AP = "Alpl-Ly6a-"))
+```
+
+## Creating numeric CT column and change undetermined values into 40
+```{r}
+qpcr$CT <- as.numeric(qpcr$CT)
+qpcr[is.na(qpcr$CT), "CT"] <- 40
+```
+
+## Quality control
+### Samples
+```{r fig.height=4, fig.width=6}
+ggplot(qpcr, aes(`Sample Name`, CT)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("CT values per sample")
+```
+
+### Genes
+```{r fig.height=4, fig.width=6}
+ggplot(qpcr, aes(`Target Name`, CT)) +
+  geom_boxplot() +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("CT values per primer")
+```
+
+## Change low CT values to NA
+```{r}
+qpcr[qpcr$CT < 10, "CT"] <- NA
+```
+
+## Check HKG over samples
+```{r fig.height=3, fig.width=3}
+qpcr %>%
+  filter(`Target Name` == "Rpl13a") %>%
+  ggplot(aes(y = CT, x = Celltype)) +
+  #geom_histogram(bins = 6) +
+  geom_boxplot() +  
+  facet_wrap(~`Target Name`, scales = "free_x")
+```
+
+## Normalize to HKG
+normalize_hkg function
+```{r}
+normalize_hkg <- function(df, hkg, sample_col = "Sample Name", target_col = "Target Name") {
+  temp <- NULL
+  temp2 <- NULL
+  #create df with average hkg per sample
+  temp <- df[which(df[[target_col]] %in% hkg), ]
+  temp <- temp %>%
+    select_(sample_col, "CT") %>%
+    group_by_(sample_col) %>%
+    summarize(CT_hkg = gm_mean(CT, na.rm = TRUE))
+  #add avg hkg to df and calculate delta ct and rel expr
+  temp2 <- df[-which(df[[target_col]] %in% hkg), ]
+  print(temp2 %>%
+    group_by_(sample_col) %>%
+    left_join(temp) %>%
+    mutate(Delta_ct = CT_hkg - CT, Rel_expr = 2^Delta_ct)
+    )
+}
+```
+
+gm_mean function
+```{r}
+gm_mean = function(x, na.rm=TRUE){
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+```
+
+```{r}
+qpcr$Sample <- qpcr$`Sample Name`
+qpcr <- normalize_hkg(df = qpcr, hkg = "Rpl13a", sample_col = "Sample", target_col = "Target Name")
+```
+
+## Plot
+```{r fig.height=10, fig.width=15}
+my_comparisons <- list(c("FAP", "MAB"), c("Alpl-Ly6a-", "MAB"), c("Alpl-Ly6a-", "FAP"))
+qpcr$Celltype <- factor(qpcr$Celltype, levels = c("FAP", "MAB", "Alpl-Ly6a-"))
+qpcr %>%
+  filter() %>%
+  ggplot(aes(x = Celltype, y = Rel_expr, col = Celltype)) +
+  #geom_point() +
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize = 3) +
+  #stat_summary(fun.y = mean, fun.ymax = mean, fun.ymin = mean, col = "black", geom = "Crossbar") +
+  geom_boxplot(outlier.shape = NA, size = 0.8) +
+  geom_jitter(size = 3, width = 0.3) +
+  facet_wrap(~`Target Name`, scales = "free", nrow = 3) +
+  scale_y_continuous("Relative expression to Rpl13a") +
+  stat_compare_means(method = "t.test", comparisons = my_comparisons, label = "p.signif") +
+  #scale_fill_brewer(type = "qual", palette = "Paired") +
+  #scale_color_brewer(type = "qual", palette = "Paired") +
+  ggthemes::scale_color_tableau() +
+  theme_bw(base_size = 18) +
+  theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"), 
+        axis.ticks.x = element_blank(), axis.ticks.y = element_line(colour = "black"), axis.text.x = element_blank(), 
+        axis.text.y = element_text(colour = "black", size = 9), axis.title.x = element_blank(), strip.background = element_blank(),
+        strip.text = element_text(face = "italic"), legend.position = "bottom", legend.title = element_blank(), 
+        plot.margin = unit(c(0,0,0,0), "cm"))
+ggsave("plots/cells/mMAB_migration_receptors.pdf", dpi = 600)
+ggsave("plots/cells/mMAB_migration_receptors.png", dpi = 600)
+```
