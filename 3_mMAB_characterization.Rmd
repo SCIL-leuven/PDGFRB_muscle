@@ -117,18 +117,27 @@ qpcr <- normalize_hkg(df = qpcr, hkg = "Rpl13a", sample_col = "Sample", target_c
 
 ## Plot
 ```{r fig.height=5, fig.width=10}
+#my_comparisons <- list(c("Alpl+/Sca1+", "Sca1+"))
+qpcr$Celltype <- plyr::revalue(qpcr$Celltype, c(C2C12_nLacZ = "C2C12_nLacZ", `Alpl+` = "Alpl+", `Alpl+/Sca1+` = "MAB", `Sca1+` = "FAP"))
+qpcr$Celltype <- factor(qpcr$Celltype, levels = c("FAP", "MAB", "Alpl+", "C2C12_nLacZ"))
 qpcr %>%
-  filter(Target_Name != "Psma3" & Target_Name != "Rab35") %>%
-  ggplot(aes(x = Celltype, y = Rel_expr, col = Celltype, fill = Celltype)) +
-  geom_dotplot(binaxis = "y", stackdir = "center", dotsize = 3) +
-  stat_summary(fun.y = mean, fun.ymax = mean, fun.ymin = mean, col = "black", geom = "Crossbar") +
-  facet_wrap(~Target_Name, scales = "free") +
+  filter(Target_Name != "Psma3" & Target_Name != "Rab35" & Target_Name != "Mrf4" & Target_Name != "Myh1" & Target_Name != "Pax3") %>%
+  filter(Celltype != "C2C12_nLacZ" & Celltype != "Alpl+") %>%
+  ggplot(aes(x = Celltype, y = Rel_expr, col = Celltype)) +
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize = 3) +
+  #stat_summary(fun.y = mean, fun.ymax = mean, fun.ymin = mean, col = "black", geom = "Crossbar") +
+  geom_boxplot(outlier.shape = NA, size = .8) +
+  geom_jitter(width = 0.3) +
+  facet_wrap(~Target_Name, scales = "free", nrow = 3) +
   scale_y_continuous("Relative expression to Rpl13a") +
-  theme_bw(base_size = 12) +
+  stat_compare_means(method = "t.test", label = "p.signif") +
+  ggthemes::scale_color_tableau() +
+  theme_bw(base_size = 16) +
   theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"), 
         axis.ticks.x = element_blank(), axis.ticks.y = element_line(colour = "black"), axis.text.x = element_blank(), 
         axis.text.y = element_text(colour = "black", size = 8), axis.title.x = element_blank(), strip.background = element_blank(),
-        strip.text = element_text(face = "italic"))
-#ggsave("plots/cells/hMAB_receptors.pdf", dpi = 600)
-#ggsave("plots/cells/hMAB_receptors.png", dpi = 600)
+        strip.text = element_text(face = "italic"), legend.title = element_blank(), legend.position = "bottom", 
+        plot.margin = unit(c(0, 0, 0, 0), "cm"))
+ggsave("plots/cells/mMAB_characterization.pdf", dpi = 600)
+ggsave("plots/cells/mMAB_characteriation.png", dpi = 600)
 ```
