@@ -21,34 +21,71 @@ library(ggpubr)
 
 ## Load data
 ```{r}
-qpcr <- read_excel("data/fig3-4_qPCR_cells/Receptors hMABs.xlsx", sheet = 1, col_names = TRUE)
+qpcr <- read_excel("data/fig7_human cells/Receptors hMABs.xlsx", sheet = 1, col_names = TRUE)
 head(qpcr)
 ```
 
 ## Clean file
 ```{r}
 qpcr <- qpcr[,1:3]
+colnames(qpcr) <- c("Sample Name", "Target Name", "CT")
 head(qpcr)
 ```
 
 ## Add column cell type
 ```{r}
-temp <- data_frame(Sample = c("RA2", "RA5", "RA7", "SkM1", "SkM3", "SkM5", "CE75", "NORM"), 
+temp <- tibble(`Sample Name` = c("RA2", "RA5", "RA7", "SkM1", "SkM3", "SkM5", "CE75", "NORM"), 
                    Celltype = c("cMAB", "cMAB", "cMAB", "skMAB", "skMAB", "skMAB", "fibro", "fibro"))
 qpcr <- left_join(qpcr, temp)
 ```
 
+## Load next file
+```{r}
+qpcr2 <- read_excel("data/fig7_human cells/2019-01-17 JC Cardiac pdgfr and human pdgfr.xls", sheet = 3, skip = 35, col_names = TRUE)
+head(qpcr2)
+```
+
+## Filter samples you need
+```{r}
+#Add annotation to temp
+temp$`Sample Name 2` <- c("hRA2", "hRA5", "hRA7", "h Sk M1", "h Sk M3", "h Sk M5", "h Norm CF", "CE 75")
+temp2 <- tibble(`Target Name 2` = c("hPDGFRA", "hPDGFRB", "hRPL13A"),
+                `Target Name` = c("PDGFRA", "PDGFRB", "RPL13A"))
+#Filter for samples that you need and only keep columns you need
+qpcr2 <- qpcr2[qpcr2$`Sample Name` %in% temp$`Sample Name 2`, c("Sample Name", "Target Name", "CT")]
+#Change Sample Name column to Sample Name 2
+colnames(qpcr2) <- c("Sample Name 2", "Target Name 2", "CT")
+#Change primer names
+qpcr2 <- left_join(qpcr2, temp2)
+#Join dataframes together
+qpcr2 <- left_join(qpcr2, temp)
+qpcr <- bind_rows(mutate_all(qpcr, as.character), mutate_all(qpcr2, as.character))
+```
+
+
 ## Creating numeric CT column and change undetermined values into 40
 ```{r}
 qpcr$CT <- as.numeric(qpcr$CT)
+```
+
+## Take average over technical replicates
+```{r}
+qpcr <- qpcr %>%
+  group_by(`Target Name`, `Sample Name`, Celltype) %>%
+  summarise(CT = mean(CT, na.rm = TRUE))
+```
+
+```{r}
 qpcr[is.na(qpcr$CT), "CT"] <- 40
 ```
+
 
 ## Quality control
 ### Samples
 ```{r fig.height=4, fig.width=6}
-ggplot(qpcr, aes(Sample, CT)) +
-  geom_boxplot() +
+ggplot(qpcr, aes(`Sample Name`, CT)) +
+  geom_boxplot(outlier.shape = NA, color = "sienna1", size = 1) +
+  geom_jitter(width = 0.3) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
   ggtitle("CT values per sample")
@@ -56,8 +93,9 @@ ggplot(qpcr, aes(Sample, CT)) +
 
 ### Genes
 ```{r fig.height=4, fig.width=6}
-ggplot(qpcr, aes(Gene, CT)) +
-  geom_boxplot() +
+ggplot(qpcr, aes(`Target Name`, CT)) +
+  geom_boxplot(outlier.shape = NA, color = "sienna1", size = 1) +
+  geom_jitter(width = 0.3) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
   ggtitle("CT values per primer")
@@ -70,16 +108,17 @@ qpcr[qpcr$CT < 10, "CT"] <- NA
 
 ## Remove blanc
 ```{r}
-qpcr <- filter(qpcr, Sample != "bl")
+qpcr <- filter(qpcr, `Sample Name` != "bl")
 ```
 
 ## Check HKG over samples
-```{r}
+```{r fig.height=2, fig.width=3}
 qpcr %>%
-  filter(Gene == "GUSB" | Gene == "LOC" | Gene == "RPL13A" | Gene == "TMEM85") %>%
+  filter(`Target Name` == "RPL13A") %>%
   ggplot(aes(y = CT, x = Celltype)) +
-    geom_boxplot() +
-    facet_wrap(~Gene, scales = "free_y")
+    geom_boxplot(size = 1, outlier.shape = NA, color = "sienna1") +
+    geom_jitter(width = 0.3) +
+    theme_bw()
 ```
 
 
@@ -113,23 +152,32 @@ gm_mean = function(x, na.rm=TRUE){
 ```
 
 ```{r}
-qpcr <- normalize_hkg(df = qpcr, hkg = "RPL13A", sample_col = "Sample", target_col = "Gene")
+#PROBLEMS WITH DPLYR AND SPACES IN COLUMN NAMES. CHANGE COLUMN NAMES!!!
+colnames(qpcr) <- c("Target", "Sample", "Celltype", "CT")
+qpcr <- normalize_hkg(df = qpcr, hkg = "RPL13A", sample_col = "Sample", target_col = "Target")
 ```
 
 ## Plot
-```{r fig.height=3, fig.width=5}
+```{r fig.height=4, fig.width=6}
+genes <- c("PDGFRA", "PDGFRB")
+qpcr$Celltype <- plyr::revalue(qpcr$Celltype, c(cMAB = "cMAB", skMAB = "skmMAB", fibro = "Fibroblast"))
+qpcr$Celltype <- factor(qpcr$Celltype, levels = c("cMAB", "skmMAB", "Fibroblast"))
 qpcr %>%
-  filter(Gene != "GUSB" & Gene != "LOC" & Gene != "NDE1" & Gene != "TMEM85" & Gene != "MEF2C" & Gene != "NKX2-5" & Gene != "PECAM1") %>%
-  ggplot(aes(x = Celltype, y = Rel_expr, col = Celltype, fill = Celltype)) +
-  geom_dotplot(binaxis = "y", stackdir = "center", dotsize = 3) +
-  stat_summary(fun.y = mean, fun.ymax = mean, fun.ymin = mean, col = "black", geom = "Crossbar") +
-  facet_wrap(~Gene, scales = "free") +
+  filter(Target != "GUSB" & Target != "LOC" & Target != "NDE1" & Target != "TMEM85" & Target != "MEF2C" & Target != "NKX2-5" & Target != "PECAM1") %>%
+  ggplot(aes(x = Celltype, y = Rel_expr, col = Celltype, col = Celltype)) +
+  geom_boxplot(outlier.shape = NA, size = .8) +
+  geom_jitter(width = 0.3, size = 2) +
+  #geom_dotplot(binaxis = "y", stackdir = "center", dotsize = 3) +
+  #stat_summary(fun.y = mean, fun.ymax = mean, fun.ymin = mean, col = "black", geom = "Crossbar") +
+  facet_wrap(~Target, scales = "free") +
+  scale_color_brewer(type = "qual", palette = "Paired") +
   scale_y_continuous("Relative expression to RPL13A") +
   theme_bw(base_size = 12) +
   theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"), 
         axis.ticks.x = element_blank(), axis.ticks.y = element_line(colour = "black"), axis.text.x = element_blank(), 
         axis.text.y = element_text(colour = "black", size = 8), axis.title.x = element_blank(), strip.background = element_blank(),
-        strip.text = element_text(face = "italic"))
+        strip.text = element_text(face = "italic"), legend.title = element_blank(), legend.position = "bottom") +
+  theme(legend.key.height = unit(0, "cm"), plot.margin = unit(c(0, 0, 0, 0), "lines"))
 ggsave("plots/cells/hMAB_receptors.pdf", dpi = 600)
 ggsave("plots/cells/hMAB_receptors.png", dpi = 600)
 ```
