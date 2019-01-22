@@ -110,29 +110,29 @@ qpcr <- normalize_hkg(df = qpcr, hkg = "Rpl13a", sample_col = "Sample", target_c
 ```
 
 ## Plot
-```{r fig.height=10, fig.width=15}
+```{r fig.height=12, fig.width=24}
 my_comparisons <- list(c("FAP", "MAB"), c("Alpl-Ly6a-", "MAB"), c("Alpl-Ly6a-", "FAP"))
 qpcr$Celltype <- factor(qpcr$Celltype, levels = c("FAP", "MAB", "Alpl-Ly6a-"))
 qpcr %>%
   filter() %>%
-  ggplot(aes(x = Celltype, y = Rel_expr, col = Celltype)) +
+  ggplot(aes(x = Celltype, y = Delta_ct, col = Celltype)) +
   #geom_point() +
   #geom_dotplot(binaxis = "y", stackdir = "center", dotsize = 3) +
   #stat_summary(fun.y = mean, fun.ymax = mean, fun.ymin = mean, col = "black", geom = "Crossbar") +
-  geom_boxplot(outlier.shape = NA, size = 0.8) +
+  geom_boxplot(outlier.shape = NA, size = 1.2) +
   geom_jitter(size = 3, width = 0.3) +
-  facet_wrap(~`Target Name`, scales = "free", nrow = 3) +
+  facet_wrap(~`Target Name`, scales = "free_y", nrow = 3) +
   scale_y_continuous("Relative expression to Rpl13a") +
   stat_compare_means(method = "t.test", comparisons = my_comparisons, label = "p.signif") +
   #scale_fill_brewer(type = "qual", palette = "Paired") +
   #scale_color_brewer(type = "qual", palette = "Paired") +
   ggthemes::scale_color_tableau() +
-  theme_bw(base_size = 18) +
+  theme_bw(base_size = 24) +
   theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"), 
         axis.ticks.x = element_blank(), axis.ticks.y = element_line(colour = "black"), axis.text.x = element_blank(), 
-        axis.text.y = element_text(colour = "black", size = 9), axis.title.x = element_blank(), strip.background = element_blank(),
+        axis.text.y = element_text(colour = "black"), axis.title.x = element_blank(), strip.background = element_blank(),
         strip.text = element_text(face = "italic"), legend.position = "bottom", legend.title = element_blank(), 
-        plot.margin = unit(c(0,0,0,0), "cm"))
+        plot.margin = unit(c(0,0,0,0), "cm"), axis.line.x = element_blank())
 ggsave("plots/cells/mMAB_migration_receptors.pdf", dpi = 600)
 ggsave("plots/cells/mMAB_migration_receptors.png", dpi = 600)
 ```
