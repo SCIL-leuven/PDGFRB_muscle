@@ -67,7 +67,8 @@ qpcr <- qpcr %>%
 ### Samples
 ```{r fig.height=3, fig.width=4}
 ggplot(qpcr, aes(Mouse, CT)) +
-  geom_boxplot() +
+  geom_boxplot(notch = TRUE) +
+  #geom_jitter(width = 0.3) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
   ggtitle("CT values per sample")
@@ -474,22 +475,25 @@ df %>%
 ```
 
 filter downregulated and upregulated genes
-```{r fig.height=2.5, fig.width=5.25}
+```{r fig.height=3, fig.width=3}
 df %>%
   filter(significant == "p < 0.05") %>%
   filter(genotype != "IC Sgcb-null / Sgca-null" & genotype != "ID Sgcb-null / IC Sgcb-null") %>%
   ggplot(aes(x = DE, fill = DE)) +
-  geom_bar(width = 0.4) +
+  geom_bar(width = 0.8) +
   scale_y_continuous(expand = c(0, 0)) +
   #scale_x_discrete(labels = c("Down", "Up")) +
-  facet_wrap(~genotype, nrow = 1, strip.position = "bottom") +
+  facet_wrap(~genotype, nrow = 1, strip.position = "bottom", labeller = labeller(genotype = c(`Sgca-null / Wild-type` = "Sgca-\nnull",
+                                                                                              `IC Sgcb-null / Wild-type` = "IC Sgcb-\nnull",
+                                                                                              `ID Sgcb-null / Wild-type` = "ID Sgcb-\nnull"))) +
+  #coord_flip() +
   scale_fill_manual(values = c("#4575b4", "#d73027")) +
-  theme_bw(base_size = 12) +
+  theme_bw(base_size = 14) +
   theme_jc +
   theme(legend.position = "bottom", axis.title.x = element_blank(), panel.border = element_blank(), axis.ticks.x = element_blank(),
         strip.background = element_blank(), strip.text = element_text(face = "italic", colour = "black", margin = margin(0, 0, 0.1, 0, "cm")), axis.text.x = element_blank(), 
         legend.title = element_blank(), strip.placement = "outside") +
-  theme(legend.key.height = unit(0, "cm"), plot.margin = unit(c(0.5,0.5,0,0), "lines"))
+  theme(legend.key.height = unit(0, "cm"), plot.margin = unit(c(0.5,0,0,0), "lines"))
 ggsave("plots/chemokines_heart/count_DE_dystrophy_wt.pdf", dpi = 600)
 ggsave("plots/chemokines_heart/count_DE_dystrophy_wt.png", dpi = 600)
 ```
@@ -678,5 +682,65 @@ ggplot(df.venn) +
   annotate("text", x = vd$x, y = vd$y, label = vd$Counts, size = 6)
 ggsave("plots/chemokines_heart/venn_diagram_chemokines_heart.pdf", dpi = 600)
 ggsave("plots/chemokines_heart/venn_diagram_chemokines_heart.png", dpi = 600)
+```
+
+## Plot overlapping genes
+```{r fig.height=1.5, fig.width=8}
+df %>% 
+  filter(genotype != "ID Sgcb-null / IC Sgcb-null" & genotype != "IC Sgcb-null / Sgca-null") %>%
+  filter(significant == "p < 0.05") %>%
+  select(genotype, Gene, DE) %>%
+  #spread(genotype, DE) %>%
+  ggplot(aes(x = Gene, y = genotype, fill = DE)) +
+  geom_tile() +
+  scale_fill_manual(values = c("#4575b4", "#d73027", "#ffffbf")) +
+  scale_y_discrete(labels = c("Sgca-null", "IC Sgcb-null", "ID Sgcb-null")) +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none", axis.title = element_blank(), axis.text.x = element_text(colour = "black", angle = 90, hjust = 1, vjust = 0.4), 
+        panel.grid = element_blank(), axis.text.y = element_text(colour = "black"), legend.title = element_blank())
+ggsave("plots/chemokines_heart/heatmap_genes.pdf", dpi = 600)
+ggsave("plots/chemokines_heart/heatmap_genes.png", dpi = 600)
+```
+
+# Heatmap
+```{r}
+library(pheatmap)
+```
+
+## Gene selection
+```{r}
+data <- qpcr[-which(qpcr$Gene %in% c("B2m", "PPC_1", "PPC_2", "PPC_3", "MGDC", "Controls")), ]
+genes <- unique(df[df$significant == "p < 0.05", ][["Gene"]])
+data <- data[data$Gene %in% genes, ]
+```
+
+
+## Create matrix
+```{r fig.height=12, fig.width=6}
+data_subset <- data %>%
+  select(Gene, Sample, Delta_ct) %>%
+  spread(Sample, Delta_ct) %>%
+  tibble::column_to_rownames(var = "Gene") %>%
+  as.matrix()
+```
+
+## Function to calculate z-score
+```{r}
+cal_z_score <- function(x) {
+  (x - mean(x)) / sd(x)
+}
+```
+
+## Column annotation
+```{r}
+my_sample_col <- data.frame(sample = rep(c("ID Sgcb-null", "Sgca-null", "IC Sgcb-null", "Wild-type"), c(3, 3, 4, 3)))
+row.names(my_sample_col) <- colnames(data_subset)
+```
+
+## Plot heatmap with z-score
+```{r fig.height=8, fig.width=5}
+data_subset_norm <- t(apply(data_subset, 1, cal_z_score))
+pheatmap(data_subset_norm, annotation_col = my_sample_col, border_color = NA, show_colnames = FALSE, cutree_rows = 5, annotation_names_col = FALSE,
+         cutree_cols = 4, annotation_legend = FALSE, annotation_colors = list(sample = c(`Wild-type` = "#f4cae4", `Sgca-null` = "#b3e2cd", `IC Sgcb-null` = "#fdcdac", `ID Sgcb-null` = "#cbd5e8")), filename = "plots/chemokines_heart/heatmap.pdf", width = 4, height = 8, treeheight_row = 20, treeheight_col = 20)
 ```
 
