@@ -1,0 +1,147 @@
+---
+title: "2_Pdgf_qPCR_heart"
+author: "Jordi Camps"
+date: "2019 M01 21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+```{r message=FALSE}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(qpcrviia7)
+library(ggpubr)
+```
+
+## Load data
+```{r}
+qpcr <- read_excel("data/fig7_human cells/2019-01-17 JC Cardiac pdgfr and human pdgfr.xls", sheet = 3, skip = 35, col_names = TRUE)
+head(qpcr)
+```
+
+## Clean file
+```{r}
+temp <- tibble(`Sample Name` = unique(qpcr$`Sample Name`)[1:15],
+               Genotype = c(rep("WT", 3), rep("Sgca-null", 3), rep("IC Sgcb-null", 5), rep("ID Sgcb-null", 4)))
+#Filter samples and select columns
+qpcr <- qpcr[qpcr$`Sample Name` %in% temp$`Sample Name`, c("Sample Name", "Target Name", "CT")]
+#Join temp tibble to create extra genotype column
+qpcr <- left_join(qpcr, temp)
+```
+
+## Creating numeric CT column and change undetermined values into 40
+```{r}
+qpcr$CT <- as.numeric(qpcr$CT)
+qpcr[is.na(qpcr$CT), "CT"] <- 40
+```
+
+
+## Quality control
+### Samples
+```{r fig.height=4, fig.width=6}
+ggplot(qpcr, aes(`Sample Name`, CT)) +
+  geom_boxplot(outlier.shape = NA, color = "sienna1", size = 1) +
+  geom_jitter(width = 0.3) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("CT values per sample")
+```
+
+### Genes
+```{r fig.height=4, fig.width=6}
+ggplot(qpcr, aes(`Target Name`, CT)) +
+  geom_boxplot(outlier.shape = NA, color = "sienna1", size = 1) +
+  geom_jitter(width = 0.3) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.4, hjust = 1)) +
+  ggtitle("CT values per primer")
+``` 
+
+## Change low CT values to NA
+```{r}
+qpcr[qpcr$CT < 10, "CT"] <- NA
+```
+
+## Check HKG over samples
+```{r fig.height=2, fig.width=3}
+qpcr %>%
+  filter(`Target Name` == "Rpl13a") %>%
+  ggplot(aes(y = CT, x = Genotype)) +
+    geom_boxplot(size = 1, outlier.shape = NA, color = "sienna1") +
+    geom_jitter(width = 0.3) +
+    geom_text(aes(label = `Sample Name`)) +
+    theme_bw()
+```
+
+## Remove WT1
+```{r}
+qpcr <- qpcr %>%
+  filter(`Sample Name` != "WT1")
+```
+
+## Normalize to HKG
+normalize_hkg function
+```{r}
+normalize_hkg <- function(df, hkg, sample_col = "Sample Name", target_col = "Target Name") {
+  temp <- NULL
+  temp2 <- NULL
+  #create df with average hkg per sample
+  temp <- df[which(df[[target_col]] %in% hkg), ]
+  temp <- temp %>%
+    select_(sample_col, "CT") %>%
+    group_by_(sample_col) %>%
+    summarize(CT_hkg = gm_mean(CT, na.rm = TRUE))
+  #add avg hkg to df and calculate delta ct and rel expr
+  temp2 <- df[-which(df[[target_col]] %in% hkg), ]
+  print(temp2 %>%
+    group_by_(sample_col) %>%
+    left_join(temp) %>%
+    mutate(Delta_ct = CT_hkg - CT, Rel_expr = 2^Delta_ct)
+    )
+}
+```
+
+gm_mean function
+```{r}
+gm_mean = function(x, na.rm=TRUE){
+  exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
+}
+```
+
+```{r}
+#PROBLEMS WITH DPLYR AND SPACES IN COLUMN NAMES. CHANGE COLUMN NAMES!!!
+colnames(qpcr) <- c("Sample", "Target", "CT", "Genotype")
+qpcr <- normalize_hkg(df = qpcr, hkg = "Rpl13a", sample_col = "Sample", target_col = "Target")
+```
+
+## Plot
+```{r fig.height=4, fig.width=14}
+my_comparisons <- list(c("Sgca-null", "IC Sgcb-null"),
+                         c("Sgca-null", "ID Sgcb-null"),
+                         c("IC Sgcb-null", "ID Sgcb-null"))
+qpcr$Genotype <- factor(qpcr$Genotype, levels = c("Sgca-null", "IC Sgcb-null", "ID Sgcb-null", "WT"))
+qpcr %>%
+  #filter(Target != "GUSB" & Target != "LOC" & Target != "NDE1" & Target != "TMEM85" & Target != "MEF2C" & Target != "NKX2-5" & Target != "PECAM1") %>%
+  ggplot(aes(x = Genotype, y = Delta_ct, col = Genotype)) +
+  geom_boxplot(outlier.shape = NA, size = 1.5) +
+  geom_jitter(width = 0.3, size = 4) +
+  #geom_text(aes(label = Sample)) +
+  facet_wrap(~Target, scales = "free", nrow = 1) +
+  stat_compare_means(method = "t.test", comparisons = my_comparisons, label = "p.signif") +
+  scale_color_brewer(type = "qual", palette = "Pastel2") +
+  scale_y_continuous("Delta Ct") +
+  theme_bw(base_size = 18) +
+  theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"), 
+        axis.ticks.x = element_blank(), axis.ticks.y = element_line(colour = "black"), axis.text.x = element_blank(), 
+        axis.text.y = element_text(colour = "black"), axis.title.x = element_blank(), strip.background = element_blank(),
+        strip.text = element_text(face = "italic"), legend.title = element_blank(), legend.position = "bottom") +
+  theme(legend.key.height = unit(0, "cm"), plot.margin = unit(c(0, 0, 0, 0), "lines"), axis.line.x = element_blank())
+ggsave("plots/chemokines_heart/Pdgf.pdf", dpi = 600)
+ggsave("plots/chemokines_heart/Pdgf.png", dpi = 600)
+```
