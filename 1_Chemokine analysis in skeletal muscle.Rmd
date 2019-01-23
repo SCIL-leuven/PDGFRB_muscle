@@ -231,7 +231,7 @@ t_data <- list()
 for (i in 1:21){
   temp <- qpcr %>%
   filter(`Target Name` == genes[i])
-t <- wilcox.test(Delta_ct~genotype, data = temp)
+t <- t.test(Delta_ct~genotype, data = temp)
 t_data[[i]] <- c(p_value = t$p.value, `Target Name` = genes[i])
 }
 ```
@@ -315,6 +315,28 @@ ggsave("plots/chemokines_skm/Delta_ct_per_significant_genes.pdf", dpi = 600)
 ggsave("plots/chemokines_skm/Delta_ct_per_significant_genes.png", dpi = 600)
 ```
 
+## Plot total chemokines per genotype
+```{r fig.height=1.25, fig.width=3}
+qpcr %>%
+  as_tibble() %>%
+  group_by(genotype, `Target Name`) %>%
+  summarize(avg_Delta_Ct = mean(Delta_ct, na.rm = TRUE)) %>%
+  ggplot(aes(x = factor(genotype, levels = c("Dystrophic", "Healthy")) , y = avg_Delta_Ct, fill = genotype)) +
+  geom_boxplot(notch = TRUE, size = .6, color = "black") +
+  scale_y_continuous("Delta Ct") +
+  #scale_x_reverse() +
+  scale_fill_manual(values = c("#67a9cf", "#ef8a62")) +
+  coord_flip() +
+  stat_compare_means(method = "t.test", label = "p.signif", label.x = 1.5) +
+  theme_bw(base_size = 12) +
+  theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"), 
+        axis.ticks = element_line(colour = "black"), axis.text = element_text(colour = "black"), axis.title.y = element_blank(), legend.position = "none",
+        axis.text.y = element_text(angle = 0, hjust = 1))
+ggsave("plots/chemokines_skm/total_expression_genotype.pdf", dpi = 600)
+ggsave("plots/chemokines_skm/total_expression_genotype.png", dpi = 600)
+```
+
+
 ### Select specific genes and plot
 #### CC chemokines
 ```{r}
@@ -342,12 +364,13 @@ cc %>%
   scale_y_continuous("Delta CT") +
   scale_x_discrete(breaks = cc$order, labels = cc$`Target Name`) +
   stat_compare_means(label = "p.signif", method = "t.test", hide.ns = TRUE) +
-  ggthemes::scale_fill_tableau() +
+  #ggthemes::scale_fill_tableau() +
+  scale_fill_manual(values = c("#67a9cf", "#ef8a62")) +
   theme_bw(base_size = 12) +
   theme_jc_mult +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "italic"), strip.background = element_blank(), strip.placement = "outside", 
-        legend.position = "top", legend.title = element_blank(),
-        axis.ticks.x = element_line(), axis.title.x = element_blank(), axis.text.y = element_text(size = 9))
+        legend.position = "top", legend.title = element_blank(), plot.margin = unit(c(0, 0, 0, 0), "lines"),
+        axis.ticks.x = element_line(), axis.title.x = element_blank(), axis.text.y = element_text())
 ggsave("plots/chemokines_skm/cc_chemokines.pdf", dpi = 600)
 ggsave("plots/chemokines_skm/cc_chemokines.png", dpi = 600)
 ```
@@ -367,7 +390,7 @@ order <- tbl_df(cxc) %>%
   select(`Target Name`, order)
 ```
 
-```{r fig.height=1.75, fig.width=2}
+```{r fig.height=2.75, fig.width=1.75}
 cxc <- cxc %>%
   left_join(order)
 cxc %>%
@@ -377,12 +400,13 @@ cxc %>%
   scale_y_continuous("Delta CT", expand = c(0.05, 0)) +
   scale_x_discrete(breaks = cxc$order, labels = cxc$`Target Name`) +
   stat_compare_means(label = "p.signif", method = "t.test", hide.ns = TRUE) +
-  ggthemes::scale_fill_tableau() +
+  #ggthemes::scale_fill_tableau() +
+  scale_fill_manual(values = c("#67a9cf", "#ef8a62")) +
   theme_bw(base_size = 12) +
   theme_jc_mult +
-  theme(axis.text.x = element_text(face = "italic"), strip.background = element_blank(), strip.placement = "outside", 
-        strip.text = element_text(face = "italic", colour = "black"), legend.position = "none", legend.title = element_blank(),
-        axis.ticks.x = element_line(), axis.title.x = element_blank(), axis.text.y = element_text(size = 9))
+  theme(axis.text.x = element_text(face = "italic", angle = 45, hjust = 1), strip.background = element_blank(), strip.placement = "outside", 
+        strip.text = element_text(face = "italic", colour = "black"), legend.position = "top", legend.title = element_blank(),
+        axis.ticks.x = element_line(), axis.title.x = element_blank(), axis.text.y = element_text(), plot.margin = unit(c(0, 0, 0, 0), "lines"))
 ggsave("plots/chemokines_skm/cxc_chemokines.pdf", dpi = 600)
 ggsave("plots/chemokines_skm/cxc_chemokines.png", dpi = 600)
 ```
@@ -402,7 +426,7 @@ order <- tbl_df(gf) %>%
   select(`Target Name`, order)
 ```
 
-```{r fig.height=1.75, fig.width=2}
+```{r fig.height=2.75, fig.width=1.75}
 gf <- gf %>%
   left_join(order)
 gf %>%
@@ -412,12 +436,13 @@ gf %>%
   scale_y_continuous("Delta CT", expand = c(0.05, 0)) +
   scale_x_discrete(breaks = gf$order, labels = gf$`Target Name`) +
   stat_compare_means(label = "p.signif", method = "t.test", hide.ns = TRUE) +
-  ggthemes::scale_fill_tableau() +
+  #ggthemes::scale_fill_tableau() +
+  scale_fill_manual(values = c("#67a9cf", "#ef8a62")) +
   theme_bw(base_size = 12) +
   theme_jc_mult +
-  theme(axis.text.x = element_text(face = "italic"), strip.background = element_blank(), strip.placement = "outside", 
-        strip.text = element_text(face = "italic", colour = "black"), legend.position = "none", legend.title = element_blank(),
-        axis.ticks.x = element_line(), axis.title.x = element_blank(), axis.text.y = element_text(size = 9))
+  theme(axis.text.x = element_text(face = "italic", angle = 45, hjust = 1), strip.background = element_blank(), strip.placement = "outside", 
+        strip.text = element_text(face = "italic", colour = "black"), legend.position = "top", legend.title = element_blank(),
+        axis.ticks.x = element_line(), axis.title.x = element_blank(), axis.text.y = element_text(), plot.margin = unit(c(0, 0, 0, 0), "lines"))
 ggsave("plots/chemokines_skm/pdgf_chemokines.pdf", dpi = 600)
 ggsave("plots/chemokines_skm/pdgf_chemokines.png", dpi = 600)
 ```
@@ -431,25 +456,26 @@ p %>%
   theme_bw(base_size = 12)
 ```
 
-```{r fig.height=4.5, fig.width=3.5}
+```{r fig.height=4.5, fig.width=3}
 temp <- p %>%
   arrange(Fold_change_avg_NA) %>%
   mutate(order = row_number())
 
 temp %>%
   ggplot(aes(x = order, y = log(Fold_change_avg_NA))) +
-  #geom_linerange(aes(x = order, ymin = 0, ymax = log(Fold_change_avg_NA))) +
+  geom_linerange(aes(x = order, ymin = 0, ymax = log(Fold_change_avg_NA)), linetype = 3, color = "slategrey") +
   geom_point(aes(col = sign, size = Delta_ct_avg_NA)) +
   scale_x_continuous(breaks = temp$order, labels = temp$`Target Name`, expand = c(0, 0.5)) +
   scale_y_continuous("Log(Fold change)", limits = c(0,5), expand = c(0, 0)) +
-  scale_color_manual(values = c("slategrey", "sienna1"), labels = c("p > 0.05", "p < 0.05")) +
-  scale_size_continuous("Log(expr)") +
+  scale_color_manual(values = c("slategrey", "#ef8a62"), labels = c("P > 0.05", "P < 0.05")) +
+  scale_size_continuous("Delta Ct") +
   coord_flip() +
-  guides(colour = guide_legend(order = 1), size = guide_legend(order = 2)) +
+  guides(colour = guide_legend(title = "", order = 1), size = guide_legend(order = 2)) +
   theme_bw(base_size = 12) +
-  theme(legend.position = "right", panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"), 
+  theme(panel.border = element_blank(), panel.grid = element_blank(), axis.line = element_line(colour = "black"), 
         axis.ticks = element_line(colour = "black"), axis.text = element_text(colour = "black"), axis.title.y = element_blank(),
-        axis.text.y = element_text(face = "italic"))
+        axis.text.y = element_text(face = "italic"), legend.justification = c(1, 0.1), legend.position = c(1, 0.1), 
+        plot.margin = unit(c(0, 0, 0, 0), "lines"))
 ggsave("plots/chemokines_skm/bubble_chart.pdf", dpi = 600)
 ggsave("plots/chemokines_skm/bubble_chart.png", dpi = 600)
 ```
