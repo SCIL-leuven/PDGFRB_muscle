@@ -3,7 +3,7 @@
 Scripts used for the analysis of qPCR arrays and transwells migration in the following paper:
 
 Growth Factor Screening in Dystrophic Muscles Reveals PDGFB/PDGFRB-Mediated Migration of Interstitial Stem Cells.
-Camps J, Grosemans H, Gijsbers R, Maes C, Sampaolesi M. Int J Mol Sci. 2019 Mar 5;20(5). pii: E1118. doi: 10.3390/ijms20051118. [https://www.mdpi.com/1422-0067/20/5/1118](link to paper)
+Camps J, Grosemans H, Gijsbers R, Maes C, Sampaolesi M. Int J Mol Sci. 2019 Mar 5;20(5). pii: E1118. doi: 10.3390/ijms20051118. [https://www.mdpi.com/1422-0067/20/5/1118](link)
 
 Analysis and figures on chemokines in muscular dystrophy project
 
